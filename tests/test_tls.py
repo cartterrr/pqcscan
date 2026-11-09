@@ -42,7 +42,7 @@ def _serve(cert_files, classical_only: bool) -> int:
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(*cert_files)
     if classical_only:
-        ctx.set_ecdh_curve("X25519")
+        ctx.set_ecdh_curve("prime256v1")
     srv = socket.socket()
     srv.bind(("127.0.0.1", 0))
     srv.listen()
