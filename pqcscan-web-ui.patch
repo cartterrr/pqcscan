@@ -1,0 +1,1085 @@
+diff --git a/README.md b/README.md
+index 3c205d2..1266a1f 100644
+--- a/README.md
++++ b/README.md
+@@ -63,6 +63,22 @@ pip install -e .
+ 
+ Python 3.10 or newer. The only dependencies are `click` and `cryptography`.
+ 
++## Web interface
++
++```bash
++pqcscan ui
++```
++
++This opens a page in your browser where you can drop a .zip, point it at a
++folder, check TLS servers, browse the findings and the migration plan, and
++download the reports. It's the same engine as the command line.
++
++The server listens on 127.0.0.1 only, and every scan request has to carry a
++random token that's built into the page, so other websites can't use it. The
++title font (Cinzel Decorative) comes from Google Fonts; offline, the page falls
++back to a system serif and everything else works the same. Use `--port` to pick
++another port and `--no-browser` to skip opening a tab.
++
+ ## Usage
+ 
+ ```bash
+diff --git a/README.ru.md b/README.ru.md
+index dd255e7..784bc11 100644
+--- a/README.ru.md
++++ b/README.ru.md
+@@ -55,6 +55,21 @@ pqcscan rules                                   # список правил
+ `pqcscan tls` запускайте только против своих серверов или тех, которые вам
+ разрешили тестировать.
+ 
++## Веб-интерфейс
++
++```bash
++pqcscan ui
++```
++
++Откроется страница в браузере: туда можно перетащить .zip, указать папку,
++проверить TLS-серверы, посмотреть находки и план миграции и скачать отчёты.
++Внутри тот же движок, что и в командной строке.
++
++Сервер слушает только 127.0.0.1, а каждый запрос на сканирование должен нести
++случайный токен, зашитый в страницу, поэтому другие сайты не смогут им
++воспользоваться. Шрифт заголовка (Cinzel Decorative) грузится с Google Fonts;
++без интернета страница возьмёт системный шрифт, остальное работает так же.
++
+ ## Что проверяется
+ 
+ Код на Python, JS/TS, Go, Java/Kotlin, C#, C/C++ и Rust: 70 правил на
+diff --git a/pyproject.toml b/pyproject.toml
+index b8da264..79dbca6 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -26,5 +26,8 @@ pqcscan = "pqcscan.cli:main"
+ [tool.setuptools.packages.find]
+ where = ["src"]
+ 
++[tool.setuptools.package-data]
++pqcscan = ["web/*.html"]
++
+ [tool.pytest.ini_options]
+ testpaths = ["tests"]
+diff --git a/src/pqcscan/cli.py b/src/pqcscan/cli.py
+index a35a064..2f41cd6 100644
+--- a/src/pqcscan/cli.py
++++ b/src/pqcscan/cli.py
+@@ -124,5 +124,21 @@ def list_rules():
+     click.echo(f"\n{len(RULES)} source rules + key/certificate, dependency and TLS checks.")
+ 
+ 
++@main.command()
++@click.option("--port", default=8765, show_default=True, help="Port on 127.0.0.1.")
++@click.option("--no-browser", is_flag=True, help="Don't open the browser automatically.")
++def ui(port, no_browser):
++    """Open the web interface in your browser.
++
++    The server only listens on 127.0.0.1, so nothing outside this computer can
++    reach it. Stop it with Ctrl+C.
++    """
++    from .server import run
++    try:
++        run(port=port, open_browser=not no_browser)
++    except OSError as exc:
++        raise click.ClickException(f"can't listen on port {port} ({exc}); try --port 8766")
++
++
+ if __name__ == "__main__":
+     main()
+diff --git a/src/pqcscan/server.py b/src/pqcscan/server.py
+new file mode 100644
+index 0000000..6bd4af8
+--- /dev/null
++++ b/src/pqcscan/server.py
+@@ -0,0 +1,169 @@
++"""Local web interface: ``pqcscan ui``.
++
++A small HTTP server from the standard library. It only listens on 127.0.0.1,
++and every request that runs a scan has to carry a random token that is baked
++into the page when it is served. That stops other websites open in the same
++browser from poking at the local API, and the Host check stops DNS rebinding.
++"""
++
++from __future__ import annotations
++
++import json
++import secrets
++import threading
++import webbrowser
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
++from importlib import resources
++from pathlib import Path
++from urllib.parse import urlparse
++
++from . import __version__, report
++from .rules import RULES
++from .scanner import ScanOptions, scan_bytes_zip, scan_path
++
++MAX_UPLOAD = 64 * 1024 * 1024
++MAX_TLS_TARGETS = 20
++
++
++def _page(token: str) -> bytes:
++    html = resources.files("pqcscan").joinpath("web/index.html").read_text(encoding="utf-8")
++    return (html.replace("{{TOKEN}}", token)
++                .replace("{{VERSION}}", __version__)).encode("utf-8")
++
++
++def _bundle(result) -> dict:
++    """Everything the page needs: the JSON report plus the other formats as text."""
++    return {
++        "report": json.loads(report.to_json(result)),
++        "files": {
++            "pqc-report.json": report.to_json(result),
++            "pqc-report.sarif": report.to_sarif(result),
++            "cbom.cdx.json": report.to_cbom(result),
++            "pqc-report.md": report.to_markdown(result),
++        },
++    }
++
++
++def _rules() -> list[dict]:
++    return [{"id": r.id, "title": r.title, "algorithm": r.algorithm, "kind": r.kind.value,
++             "severity": r.severity.value, "langs": sorted(r.langs)} for r in RULES]
++
++
++class Handler(BaseHTTPRequestHandler):
++    server_version = f"pqcscan/{__version__}"
++    token: str = ""
++    allowed_hosts: set[str] = set()
++    quiet = True
++
++    def log_message(self, fmt, *args):  # keep the terminal clean
++        if not self.quiet:
++            super().log_message(fmt, *args)
++
++    # helpers
++
++    def _send(self, code: int, body: bytes, ctype: str = "application/json") -> None:
++        self.send_response(code)
++        self.send_header("Content-Type", ctype)
++        self.send_header("Content-Length", str(len(body)))
++        self.send_header("Cache-Control", "no-store")
++        self.send_header("X-Content-Type-Options", "nosniff")
++        self.send_header("Referrer-Policy", "no-referrer")
++        if ctype.startswith("text/html"):
++            self.send_header("Content-Security-Policy",
++                             "default-src 'self'; style-src 'self' 'unsafe-inline' "
++                             "https://fonts.googleapis.com; font-src 'self' data: "
++                             "https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; "
++                             "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'")
++        self.end_headers()
++        self.wfile.write(body)
++
++    def _json(self, code: int, obj) -> None:
++        self._send(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"))
++
++    def _host_ok(self) -> bool:
++        return self.headers.get("Host", "") in self.allowed_hosts
++
++    def _token_ok(self) -> bool:
++        return secrets.compare_digest(self.headers.get("X-Pqcscan-Token", ""), self.token)
++
++    def _read_body(self) -> bytes | None:
++        try:
++            length = int(self.headers.get("Content-Length", "0"))
++        except ValueError:
++            return None
++        if length < 0 or length > MAX_UPLOAD:
++            return None
++        return self.rfile.read(length)
++
++    # routes
++
++    def do_GET(self):
++        if not self._host_ok():
++            return self._send(403, b"bad host", "text/plain")
++        path = urlparse(self.path).path
++        if path in ("/", "/index.html"):
++            return self._send(200, _page(self.token), "text/html; charset=utf-8")
++        if path == "/api/rules":
++            return self._json(200, {"rules": _rules(), "version": __version__})
++        if path == "/favicon.ico":
++            return self._send(204, b"", "image/x-icon")
++        return self._send(404, b"not found", "text/plain")
++
++    def do_POST(self):
++        if not self._host_ok() or not self._token_ok():
++            return self._json(403, {"error": "forbidden"})
++        path = urlparse(self.path)
++        body = self._read_body()
++        if body is None:
++            return self._json(413, {"error": f"request too large (limit {MAX_UPLOAD // 2**20} MB)"})
++        try:
++            if path.path == "/api/scan/zip":
++                opts = ScanOptions(include_tests="no_tests=1" not in (path.query or ""))
++                result = scan_bytes_zip(body, opts)
++                result.target = self.headers.get("X-Pqcscan-Filename", "upload.zip")[:200]
++                return self._json(200, _bundle(result))
++            if path.path == "/api/scan/path":
++                req = json.loads(body or b"{}")
++                target = Path(str(req.get("path", ""))).expanduser()
++                if not target.exists():
++                    return self._json(400, {"error": f"path not found: {target}"})
++                opts = ScanOptions(include_tests=not req.get("no_tests"))
++                return self._json(200, _bundle(scan_path(target, opts)))
++            if path.path == "/api/tls":
++                from .tls import scan_endpoints
++                req = json.loads(body or b"{}")
++                targets = [t.strip() for t in req.get("targets", []) if str(t).strip()]
++                if not targets:
++                    return self._json(400, {"error": "no hosts given"})
++                if len(targets) > MAX_TLS_TARGETS:
++                    return self._json(400, {"error": f"at most {MAX_TLS_TARGETS} hosts at a time"})
++                return self._json(200, _bundle(scan_endpoints(targets, timeout=8.0)))
++        except json.JSONDecodeError:
++            return self._json(400, {"error": "bad JSON"})
++        except Exception as exc:   # report it in the page instead of dropping the connection
++            return self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
++        return self._json(404, {"error": "unknown endpoint"})
++
++
++def make_server(port: int = 8765, token: str | None = None) -> ThreadingHTTPServer:
++    token = token or secrets.token_urlsafe(24)
++    httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
++    real_port = httpd.server_address[1]
++    Handler.token = token
++    Handler.allowed_hosts = {f"127.0.0.1:{real_port}", f"localhost:{real_port}"}
++    return httpd
++
++
++def run(port: int = 8765, open_browser: bool = True) -> None:
++    httpd = make_server(port)
++    url = f"http://127.0.0.1:{httpd.server_address[1]}/"
++    print(f"pqcscan {__version__} is running at {url}")
++    print("Only this computer can reach it. Press Ctrl+C to stop.")
++    if open_browser:
++        threading.Timer(0.6, webbrowser.open, args=(url,)).start()
++    try:
++        httpd.serve_forever()
++    except KeyboardInterrupt:
++        print("\nstopped")
++    finally:
++        httpd.server_close()
+diff --git a/src/pqcscan/web/index.html b/src/pqcscan/web/index.html
+new file mode 100644
+index 0000000..521df3c
+--- /dev/null
++++ b/src/pqcscan/web/index.html
+@@ -0,0 +1,725 @@
++<!doctype html>
++<html lang="en">
++<head>
++<meta charset="utf-8">
++<meta name="viewport" content="width=device-width, initial-scale=1">
++<title>pqcscan</title>
++<link rel="preconnect" href="https://fonts.googleapis.com">
++<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&display=swap" rel="stylesheet">
++<style>
++:root{
++  --ink:#0d1b2c; --navy:#13294a; --blue:#2f7fd8; --blue-2:#5aa2ec; --sky:#9fcdf4; --pale:#eaf3fb;
++  --paper:#f7f9fb; --line:#9fb3c8; --muted:#5d6e80;
++  --high:#d6342b; --medium:#e39a0b; --low:#2b95d6; --info:#8796a6; --ok:#2e9b4f;
++  --title:"Cinzel Decorative","Trajan Pro","Optima","Palatino Linotype",Palatino,serif;
++  --ui:Tahoma,Verdana,"Segoe UI",Geneva,sans-serif;
++  --mono:"Lucida Console",Consolas,Menlo,monospace;
++  --bevel:linear-gradient(#ffffff,#e3e9ef 48%,#cfd8e2 52%,#e8edf2);
++}
++*{box-sizing:border-box}
++html{background:#dfe9f3}
++body{
++  margin:0;font:12px/1.5 var(--ui);color:var(--ink);
++  background:
++    radial-gradient(circle at 1px 1px,rgba(13,27,44,.16) 1px,transparent 1.4px) 0 0/14px 14px,
++    linear-gradient(180deg,#bcdaf5 0,#e7f1fa 340px,#eef3f8 100%);
++  min-height:100vh;
++}
++a{color:var(--blue)}
++.page{max-width:980px;margin:0 auto;padding:0 12px 30px}
++
++/* top utility bar, like old portal sites */
++.util{display:flex;justify-content:space-between;align-items:center;height:26px;
++  font:bold 10px/26px var(--ui);letter-spacing:.12em;text-transform:uppercase;color:var(--navy)}
++.util nav a{color:var(--navy);text-decoration:none;margin-left:16px}
++.util nav a:hover{color:var(--blue)}
++.util .clock{font-family:var(--mono);letter-spacing:0}
++
++/* banner */
++.banner{position:relative;height:250px;border:1px solid var(--ink);background:#fff;overflow:hidden;
++  box-shadow:0 1px 0 #fff inset,0 6px 18px rgba(19,41,74,.18)}
++.banner svg{position:absolute;inset:0;width:100%;height:100%}
++.brand{position:absolute;left:30px;top:44px;z-index:2}
++.brand h1{margin:0;font:900 64px/1 var(--title);letter-spacing:.02em;color:#121418;
++  text-shadow:0 1px 0 #fff,0 2px 0 #9aa6b3,0 3px 6px rgba(0,0,0,.35)}
++.brand h1 .q{color:var(--blue)}
++.brand .slogan{margin-top:10px;font:bold 15px/1 Helvetica,Arial,sans-serif;letter-spacing:-.01em}
++.brand .slogan b{background:#111;color:#fff;padding:2px 6px}
++.brand .sub{margin-top:8px;font:10px/1.4 var(--mono);color:var(--muted);max-width:330px}
++.lyric{position:absolute;right:22px;top:12px;z-index:2;font:9px/1.35 Helvetica,Arial,sans-serif;color:#10202f;text-align:left;
++  background:rgba(255,255,255,.92);border:1px solid #0d1b2c;padding:4px 7px}
++
++/* beveled tab bar */
++.tabs{display:flex;flex-wrap:wrap;gap:2px;margin-top:6px;padding:3px;border:1px solid #7f93a8;
++  background:var(--bevel);box-shadow:0 1px 0 #fff inset}
++.tabs button{all:unset;cursor:pointer;padding:5px 14px;font:bold 10px/1.6 var(--ui);letter-spacing:.14em;
++  text-transform:uppercase;color:#33465c;border:1px solid transparent}
++.tabs button:hover{color:var(--blue);border-color:#b7c6d6;background:#fff}
++.tabs button[aria-selected=true]{color:#fff;background:linear-gradient(#4b9bea,#1f66b8);border-color:#14457f;
++  text-shadow:0 -1px 0 rgba(0,0,0,.3)}
++.tabs .badge{display:inline-block;min-width:16px;padding:0 4px;margin-left:5px;border-radius:7px;background:var(--high);color:#fff;letter-spacing:0;text-align:center}
++.tabs button:focus-visible{outline:2px dotted var(--blue)}
++
++.layout{display:grid;grid-template-columns:220px 1fr;gap:12px;margin-top:12px}
++@media (max-width:760px){.layout{grid-template-columns:1fr}.layout aside{order:2}.brand h1{font-size:44px}.brand .sub,.lyric,.util nav{display:none}.banner{height:200px}}
++
++/* sidebar boxes (XS Engineering style) */
++.box{background:#fff;border:1px solid #8ca0b5;margin-bottom:12px;box-shadow:2px 2px 0 rgba(19,41,74,.12)}
++.box h3{margin:0;padding:4px 8px;font:bold 10px/1.6 var(--ui);letter-spacing:.12em;text-transform:uppercase;color:#fff;
++  background:linear-gradient(90deg,var(--navy),#2c5f9e 70%,#9fcdf4);border-bottom:1px solid var(--ink);position:relative}
++.box h3::after{content:"";position:absolute;right:0;top:0;bottom:0;width:30px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.5) 0 1px,transparent 1px 4px)}
++.box .in{padding:8px}
++.menu{list-style:none;margin:0;padding:6px}
++.menu li{margin:0 0 2px}
++.menu button{all:unset;cursor:pointer;display:block;width:100%;box-sizing:border-box;padding:3px 8px 3px 10px;
++  font:bold 10px/1.5 var(--ui);text-transform:uppercase;letter-spacing:.06em;color:#24364b;
++  border-left:6px solid var(--navy);background:linear-gradient(#fdfefe,#dfe7ef)}
++.menu button:hover,.menu button.on{border-left-color:var(--blue);background:linear-gradient(#e8f3fd,#c2dcf4);color:var(--navy)}
++
++.lcd{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;font:bold 10px var(--ui);text-transform:uppercase}
++.lcd .digits{justify-self:end;font:bold 15px/1 var(--mono);color:#8ff59a;background:#081208;padding:3px 6px;border:2px inset #6b7b6b;letter-spacing:.12em;min-width:64px;text-align:right;text-shadow:0 0 4px rgba(143,245,154,.7)}
++.lcd .digits.h{color:#ff7b6e;text-shadow:0 0 4px rgba(255,123,110,.7)}
++.lcd .digits.m{color:#ffd166;text-shadow:0 0 4px rgba(255,209,102,.6)}
++
++.countdown{font:10px/1.5 var(--ui)}
++.countdown .big{font:bold 22px/1.1 var(--mono);color:var(--navy)}
++.bar{height:9px;border:1px solid #6d8399;background:#fff;margin:3px 0 8px;overflow:hidden}
++.bar i{display:block;height:100%;background:repeating-linear-gradient(90deg,#2f7fd8 0 6px,#5aa2ec 6px 8px)}
++
++.buttons88{display:flex;flex-wrap:wrap;gap:4px}
++.b88{width:88px;height:31px;border:1px solid #000;display:flex;flex-direction:column;justify-content:center;align-items:center;
++  font:bold 8px/1.1 Verdana,sans-serif;text-transform:uppercase;letter-spacing:.04em;text-align:center}
++.b88 .x{font-size:11px}
++.b1{background:linear-gradient(#111,#333);color:#9ff}
++.b2{background:linear-gradient(#fff,#cfe4f7);color:var(--navy)}
++.b3{background:repeating-linear-gradient(45deg,#2f7fd8 0 4px,#4d95e2 4px 8px);color:#fff}
++.b4{background:#f4f4f4;color:#c00;border-style:outset}
++
++/* window panels (XP / IM client style) */
++.win{background:#fff;border:1px solid #23497c;border-radius:6px 6px 2px 2px;margin-bottom:14px;
++  box-shadow:0 0 0 1px #b8cfe8 inset,3px 3px 0 rgba(19,41,74,.15)}
++.win>.title{display:flex;align-items:center;gap:8px;height:24px;padding:0 4px 0 8px;border-radius:5px 5px 0 0;color:#fff;
++  font:bold 11px/24px var(--ui);background:linear-gradient(#5fa6ee,#2a6fc5 45%,#1f5fb1 55%,#3a82d6);text-shadow:0 1px 0 rgba(0,0,0,.35)}
++.win>.title .ic{width:14px;height:14px;border-radius:3px;background:radial-gradient(circle at 35% 35%,#fff,#9fd0ff 40%,#1b5aa8);border:1px solid #0d3266}
++.win>.title .ctl{margin-left:auto;display:flex;gap:2px}
++.win>.title .ctl span{width:17px;height:16px;border:1px solid #fff;border-radius:3px;background:linear-gradient(#73b1f0,#2a6fc5);
++  font:bold 10px/14px var(--ui);text-align:center}
++.win>.title .ctl span.x{background:linear-gradient(#f39a8a,#c8402d)}
++.win>.body{padding:14px}
++.win h2{margin:0 0 8px;font:bold 15px/1.3 var(--ui);color:var(--navy)}
++.win p{margin:0 0 10px}
++
++/* section header with curved tab, like "WELCOME TO XS ENGINEERING" */
++.sect{margin:14px 0 8px;display:flex;align-items:flex-end}
++.sect span{padding:4px 26px 3px 10px;font:bold 11px/1.4 var(--ui);letter-spacing:.08em;text-transform:uppercase;color:var(--navy);
++  background:linear-gradient(#fff,#dce7f2);border:1px solid #8ca0b5;border-bottom:none;border-radius:0 18px 0 0}
++.sect::after{content:"";flex:1;border-bottom:3px double #8ca0b5}
++
++.drop{border:2px dashed #6f8eb0;background:repeating-linear-gradient(135deg,#f3f8fd 0 10px,#e9f2fb 10px 20px);
++  padding:22px;text-align:center;cursor:pointer;transition:background .15s}
++.drop.over{background:#d6e9fb;border-color:var(--blue)}
++.drop strong{display:block;font:bold 14px var(--ui);color:var(--navy)}
++.drop small{color:var(--muted)}
++.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px}
++input[type=text],textarea{font:12px var(--mono);border:2px inset #c9d3dd;background:#fff;padding:4px 6px;color:var(--ink)}
++input[type=text]{flex:1;min-width:180px}
++textarea{width:100%;min-height:90px;resize:vertical}
++input:focus,textarea:focus{outline:2px solid var(--blue-2);outline-offset:0}
++.btn{cursor:pointer;font:bold 11px var(--ui);letter-spacing:.06em;text-transform:uppercase;padding:5px 14px;color:#fff;
++  border:1px solid #0f3e78;border-radius:3px;background:linear-gradient(#6ab0f3,#2f7fd8 50%,#1d63b8 51%,#2b77cc);
++  text-shadow:0 -1px 0 rgba(0,0,0,.3);box-shadow:0 1px 0 rgba(255,255,255,.6) inset}
++.btn:hover{filter:brightness(1.08)}
++.btn:active{transform:translateY(1px)}
++.btn.grey{color:var(--ink);text-shadow:none;border-color:#7d8fa3;background:var(--bevel)}
++.btn:disabled{opacity:.5;cursor:wait}
++label.chk{display:inline-flex;gap:5px;align-items:center;font-size:11px}
++
++.busy{display:none;margin-top:12px}
++.busy.on{display:block}
++.busy .stripes{height:14px;border:1px solid #23497c;background:repeating-linear-gradient(45deg,#2f7fd8 0 10px,#8fc2f0 10px 20px);
++  background-size:28px 28px;animation:mv .6s linear infinite}
++@keyframes mv{to{background-position:28px 0}}
++.busy p{font:bold 10px var(--ui);letter-spacing:.2em;text-transform:uppercase;margin:4px 0 0;animation:blink 1s steps(2) infinite}
++@keyframes blink{50%{opacity:.25}}
++@media (prefers-reduced-motion:reduce){.busy .stripes,.busy p{animation:none}}
++.err{display:none;margin-top:10px;padding:6px 8px;border:1px solid var(--high);background:#fff1ef;color:#8d1d16;font-weight:bold}
++.err.on{display:block}
++
++/* news list */
++.news{width:100%;border-collapse:collapse}
++.news td{padding:5px 8px;border-bottom:1px dotted #9fb3c8;vertical-align:top}
++.news td:first-child{width:92px;font:bold 11px var(--mono);color:var(--navy);background:#eef4fa}
++.news .empty{color:var(--muted);font-style:italic}
++
++/* results */
++.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
++@media (max-width:560px){.tiles{grid-template-columns:repeat(2,1fr)}}
++.tile{border:1px solid #8ca0b5;background:linear-gradient(#fff,#eef3f8);padding:8px;text-align:center}
++.tile b{display:block;font:bold 26px/1.1 var(--mono)}
++.tile span{font:bold 9px var(--ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
++.tile.high b{color:var(--high)} .tile.medium b{color:var(--medium)} .tile.low b{color:var(--low)} .tile.info b{color:var(--info)}
++.meta{font:11px var(--mono);color:var(--muted);margin:8px 0 0}
++.filters{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:10px 0}
++.chip{all:unset;cursor:pointer;padding:2px 9px;border:1px solid #8ca0b5;border-radius:10px;font:bold 10px/1.6 var(--ui);text-transform:uppercase;background:#fff}
++.chip[aria-pressed=true]{background:var(--navy);color:#fff;border-color:var(--navy)}
++.chip:focus-visible{outline:2px dotted var(--blue)}
++.filters input{max-width:220px}
++table.f{width:100%;border-collapse:collapse;table-layout:fixed}
++table.f th{font:bold 9px var(--ui);letter-spacing:.12em;text-transform:uppercase;text-align:left;color:#fff;background:var(--navy);padding:4px 6px}
++table.f td{padding:5px 6px;border-bottom:1px solid #dbe4ee;vertical-align:top;word-wrap:break-word}
++table.f tr.r{cursor:pointer}
++table.f tr.r:nth-child(4n+1) td{background:#f5f9fd}
++table.f tr.r:hover td{background:#e3effb}
++table.f .loc{font:11px var(--mono);color:#24364b}
++.sev{display:inline-block;width:58px;text-align:center;font:bold 9px/16px var(--ui);letter-spacing:.08em;text-transform:uppercase;color:#fff;border:1px solid rgba(0,0,0,.35)}
++.sev.high{background:var(--high)} .sev.medium{background:var(--medium)} .sev.low{background:var(--low)} .sev.info{background:var(--info)}
++.tag{display:inline-block;font:9px var(--ui);text-transform:uppercase;color:var(--muted);border:1px solid #c5d1dd;padding:0 4px;margin-left:4px}
++tr.d td{background:#fbfdff;border-bottom:2px solid #c5d1dd}
++tr.d pre{margin:0 0 6px;padding:6px 8px;font:11px/1.4 var(--mono);background:#0d1b2c;color:#d8ecff;white-space:pre-wrap;word-break:break-all}
++tr.d p{margin:0 0 4px}
++.dl{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
++
++/* plan */
++.wave{border:1px solid #8ca0b5;margin-bottom:12px;background:#fff}
++.wave header{display:flex;justify-content:space-between;gap:8px;align-items:baseline;padding:6px 10px;color:#fff;
++  background:linear-gradient(90deg,var(--navy),#2f6cb3)}
++.wave header b{font:bold 12px var(--ui)}
++.wave header small{font:bold 10px var(--mono);color:#cfe6ff}
++.wave.fix-now header{background:linear-gradient(90deg,#5c1410,#b3362b)}
++.wave.verify header{background:linear-gradient(90deg,#14432a,#2e8b57)}
++.wave .why{padding:8px 10px 0;color:var(--muted)}
++.wave ul{margin:6px 0;padding:0 10px 4px 28px}
++.wave li{margin-bottom:6px}
++.wave li .locs{font:10px/1.5 var(--mono);color:#41556b}
++.wave .todo{margin:0 10px 10px;padding:6px 8px;border-left:4px solid var(--blue);background:#eef5fc}
++
++/* timeline */
++.tl{position:relative;height:96px;margin:6px 4px 34px;border-bottom:2px solid var(--navy)}
++.tl .yr{position:absolute;bottom:-18px;font:bold 10px var(--mono);transform:translateX(-50%)}
++.tl .tick{position:absolute;bottom:0;width:1px;height:8px;background:var(--navy)}
++.tl .ev{position:absolute;bottom:10px;transform:translateX(-50%);width:108px;font:9px/1.3 var(--ui);text-align:center}
++.tl .ev i{display:block;width:10px;height:10px;margin:3px auto 0;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 1px var(--navy)}
++.tl .now{position:absolute;top:0;bottom:0;width:2px;background:var(--high)}
++.tl .now span{position:absolute;top:-2px;left:4px;font:bold 9px var(--ui);color:var(--high);white-space:nowrap}
++table.plain{width:100%;border-collapse:collapse}
++table.plain th,table.plain td{text-align:left;padding:4px 6px;border-bottom:1px solid #dbe4ee}
++table.plain th{font:bold 9px var(--ui);letter-spacing:.12em;text-transform:uppercase;background:#e6eef6}
++
++.hidden{display:none!important}
++footer{margin-top:18px;padding:10px;border-top:3px double #8ca0b5;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;
++  font:bold 9px/1.6 var(--ui);letter-spacing:.12em;text-transform:uppercase;color:#4c5f74}
++footer .pw{border:1px solid #4c5f74;padding:0 6px;background:#fff}
++</style>
++</head>
++<body>
++<div class="page">
++
++  <div class="util">
++    <span>pqcscan // local mode // v{{VERSION}}</span>
++    <nav aria-label="Quick links">
++      <a href="#" data-go="scan">Home</a><a href="#" data-go="rules">Rules</a><a href="#" data-go="about">About</a>
++      <a href="https://github.com/cartterrr/pqcscan" target="_blank" rel="noopener">GitHub</a>
++      <span class="clock" id="clock"></span>
++    </nav>
++  </div>
++
++  <header class="banner" aria-label="pqcscan">
++    <svg viewBox="0 0 980 250" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
++      <defs>
++        <linearGradient id="skyG" x1="0" y1="0" x2="0" y2="1">
++          <stop offset="0" stop-color="#2d7fd6"/><stop offset=".55" stop-color="#8cc1ef"/><stop offset="1" stop-color="#e9f3fc"/>
++        </linearGradient>
++        <radialGradient id="planetG" cx=".35" cy=".3" r=".8">
++          <stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#c9d9ea"/><stop offset="1" stop-color="#7f9cbd"/>
++        </radialGradient>
++        <linearGradient id="ribFill" x1="0" y1="0" x2="1" y2="0">
++          <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfe5fa"/>
++        </linearGradient>
++        <filter id="soft" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>
++        <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .07 0"/></filter>
++        <pattern id="dots" width="12" height="12" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".8" fill="#0d1b2c" opacity=".35"/></pattern>
++        <clipPath id="win"><rect x="430" y="22" width="430" height="168"/></clipPath>
++      </defs>
++
++      <rect width="980" height="250" fill="#fbfcfd"/>
++      <rect width="980" height="250" fill="url(#dots)"/>
++
++      <!-- sky window -->
++      <g clip-path="url(#win)">
++        <rect x="430" y="22" width="430" height="168" fill="url(#skyG)"/>
++        <g fill="#fff" filter="url(#soft)" opacity=".95">
++          <ellipse cx="480" cy="182" rx="90" ry="26"/><ellipse cx="600" cy="176" rx="110" ry="30"/>
++          <ellipse cx="760" cy="186" rx="120" ry="28"/><ellipse cx="700" cy="150" rx="60" ry="22"/>
++          <ellipse cx="530" cy="140" rx="40" ry="14"/><ellipse cx="820" cy="120" rx="50" ry="16"/>
++        </g>
++        <g fill="none" stroke="#fff" stroke-linecap="round" opacity=".85">
++          <path d="M560 68 a26 18 0 1 1 30 10" stroke-width="5" opacity=".6"/>
++          <path d="M548 66 a40 28 -10 1 1 52 22" stroke-width="3" opacity=".5"/>
++          <path d="M536 60 a56 38 -20 1 1 74 32" stroke-width="2" opacity=".45"/>
++          <path d="M526 56 a72 48 -25 1 1 92 42" stroke-width="1.2" opacity=".4"/>
++        </g>
++        <circle cx="578" cy="70" r="5" fill="#0d1b2c"/>
++        <circle cx="805" cy="58" r="26" fill="url(#planetG)" opacity=".9"/>
++        <circle cx="468" cy="44" r="9" fill="url(#planetG)" opacity=".8"/>
++        <g fill="#fff">
++          <circle cx="455" cy="70" r="1"/><circle cx="640" cy="40" r="1.2"/><circle cx="700" cy="30" r=".8"/>
++          <circle cx="760" cy="96" r="1"/><circle cx="845" cy="110" r="1"/><circle cx="510" cy="100" r=".8"/>
++        </g>
++      </g>
++      <rect x="430" y="22" width="430" height="168" fill="none" stroke="#0d1b2c" stroke-width="1"/>
++      <rect x="866" y="132" width="96" height="58" fill="#5aa2ec"/>
++      <rect x="874" y="146" width="80" height="9" rx="2" fill="#2f7fd8"/>
++      <rect x="874" y="160" width="80" height="9" rx="2" fill="#2f7fd8"/>
++
++      <!-- line-art ribbons -->
++      <g>
++<path d="M330.0,250.0 L360.3,240.9 L390.1,230.2 L419.9,218.8 L449.4,206.9 L478.9,194.4 L508.1,181.6 L537.3,168.5 L566.2,155.2 L594.9,141.8 L623.5,128.4 L651.8,114.9 L680.0,101.6 L707.9,88.5 L735.6,75.6 L763.1,63.1 L790.4,51.0 L817.4,39.5 L844.3,28.4 L870.8,18.1 L897.1,8.4 L923.1,-0.6 L949.1,-8.0 L974.7,-14.5 L1000.0,-20.0 L1000.0,-20.0 L974.7,-14.5 L949.1,-8.0 L923.1,-0.6 L896.6,6.9 L869.8,15.3 L842.7,24.4 L815.4,34.1 L787.7,44.5 L759.9,55.4 L731.8,66.8 L703.6,78.7 L675.1,90.9 L646.6,103.4 L617.9,116.3 L589.2,129.3 L560.3,142.5 L531.5,155.9 L502.6,169.3 L473.7,182.8 L444.8,196.2 L415.9,209.6 L387.1,222.9 L358.4,236.1 L330.0,250.0Z" fill="url(#ribFill)" fill-opacity="0.9" stroke="#0d1b2c" stroke-width="0.8"/>
++<path d="M250.0,240.0 L282.8,238.1 L315.5,232.5 L348.1,224.7 L380.7,215.2 L413.0,204.1 L445.2,191.8 L477.1,178.6 L508.7,164.6 L540.1,150.1 L571.2,135.4 L602.0,120.6 L632.5,106.0 L662.7,91.9 L692.7,78.3 L722.4,65.7 L751.9,54.1 L781.2,43.9 L810.2,35.2 L839.1,28.2 L867.8,23.2 L896.2,20.2 L924.5,20.8 L952.4,24.0 L980.0,30.0 L980.0,30.0 L952.4,24.0 L924.5,20.8 L896.2,20.2 L867.5,20.7 L838.3,23.6 L808.7,28.6 L778.7,35.3 L748.4,43.6 L717.9,53.4 L687.0,64.3 L656.0,76.2 L624.9,89.0 L593.6,102.4 L562.3,116.2 L531.0,130.2 L499.6,144.3 L468.2,158.3 L436.9,171.9 L405.7,185.1 L374.5,197.6 L343.3,209.4 L312.2,220.2 L281.1,230.0 L250.0,240.0Z" fill="#2f7fd8" fill-opacity="0.55" stroke="#0d1b2c" stroke-width="0.8"/>
++<path d="M420.0,260.0 L446.8,247.2 L473.1,234.4 L499.1,222.2 L525.0,210.6 L550.8,199.6 L576.4,189.1 L601.9,179.2 L627.2,169.9 L652.4,161.1 L677.5,152.9 L702.4,145.2 L727.2,138.0 L751.8,131.3 L776.3,125.2 L800.6,119.5 L824.7,114.3 L848.7,109.6 L872.4,105.4 L895.9,101.6 L919.2,98.2 L942.3,95.3 L965.2,93.2 L987.7,91.4 L1010.0,90.0 L1010.0,90.0 L987.7,91.4 L965.2,93.2 L942.3,95.3 L919.1,97.2 L895.7,99.6 L872.0,102.4 L848.0,105.7 L823.8,109.4 L799.4,113.6 L774.8,118.3 L749.9,123.6 L724.9,129.5 L699.8,136.0 L674.5,143.2 L649.1,151.1 L623.6,159.7 L598.0,169.1 L572.4,179.3 L546.8,190.4 L521.2,202.3 L495.6,215.1 L470.1,228.8 L444.8,243.6 L420.0,260.0Z" fill="#ffffff" fill-opacity="0.9" stroke="#0d1b2c" stroke-width="0.8"/>
++<path d="M380.0,235.0 L405.6,236.2 L431.1,233.7 L456.5,229.4 L481.8,223.4 L507.0,216.2 L531.9,207.7 L556.7,198.1 L581.1,187.6 L605.4,176.4 L629.3,164.4 L653.0,151.8 L676.3,138.8 L699.5,125.5 L722.3,111.9 L744.9,98.3 L767.3,84.6 L789.4,71.0 L811.4,57.7 L833.1,44.6 L854.6,31.9 L875.7,19.4 L897.4,9.0 L918.9,-0.9 L940.0,-10.0 L940.0,-10.0 L918.9,-0.9 L897.4,9.0 L875.7,19.4 L853.0,28.9 L830.1,39.0 L807.0,49.5 L783.7,60.3 L760.1,71.3 L736.4,82.5 L712.6,93.7 L688.6,104.9 L664.7,116.2 L640.7,127.3 L616.7,138.3 L592.7,149.2 L568.8,159.8 L545.0,170.1 L521.2,180.1 L497.5,189.8 L474.0,199.1 L450.4,208.1 L426.9,216.7 L403.4,225.1 L380.0,235.0Z" fill="url(#ribFill)" fill-opacity="0.9" stroke="#0d1b2c" stroke-width="0.8"/>
++<path d="M520.0,250.0 L542.3,243.1 L563.9,235.4 L585.2,227.9 L606.3,220.7 L627.3,213.7 L648.1,207.0 L668.8,200.6 L689.4,194.6 L709.8,189.0 L730.0,183.7 L750.2,178.8 L770.2,174.2 L790.2,170.2 L810.0,166.5 L829.7,163.4 L849.2,160.7 L868.7,158.5 L888.0,156.8 L907.1,155.7 L926.1,155.0 L944.9,154.8 L963.5,156.0 L981.9,157.8 L1000.0,160.0 L1000.0,160.0 L981.9,157.8 L963.5,156.0 L944.9,154.8 L926.1,153.3 L907.1,152.3 L887.8,151.9 L868.3,152.0 L848.5,152.7 L828.6,153.8 L808.5,155.5 L788.2,157.8 L767.8,160.8 L747.2,164.3 L726.5,168.4 L705.7,173.2 L684.9,178.7 L664.0,184.9 L643.1,191.8 L622.2,199.3 L601.4,207.7 L580.7,216.8 L560.1,226.7 L539.7,237.5 L520.0,250.0Z" fill="#2f7fd8" fill-opacity="0.55" stroke="#0d1b2c" stroke-width="0.8"/>
++<path d="M300.0,200.0 L330.6,189.2 L361.0,178.7 L391.3,168.9 L421.4,159.8 L451.5,151.3 L481.4,143.4 L511.3,136.1 L541.0,129.3 L570.6,123.0 L600.0,117.2 L629.3,111.7 L658.4,106.7 L687.4,101.9 L716.1,97.4 L744.7,93.2 L773.0,89.2 L801.1,85.3 L829.0,81.5 L856.5,77.9 L883.8,74.2 L910.8,70.5 L937.6,67.1 L963.9,63.7 L990.0,60.0 L990.0,60.0 L963.9,63.7 L937.6,67.1 L910.8,70.5 L883.7,73.4 L856.4,76.4 L828.7,79.4 L800.8,82.5 L772.6,85.7 L744.1,89.0 L715.4,92.7 L686.6,96.6 L657.5,100.8 L628.2,105.5 L598.8,110.6 L569.2,116.3 L539.5,122.5 L509.6,129.4 L479.7,136.9 L449.8,145.2 L419.7,154.2 L389.7,164.1 L359.7,174.9 L329.7,186.8 L300.0,200.0Z" fill="#ffffff" fill-opacity="0.9" stroke="#0d1b2c" stroke-width="0.8"/>
++<path d="M600.0,255.0 L616.4,259.2 L633.9,258.0 L651.5,252.8 L669.1,244.2 L686.3,232.8 L703.3,218.9 L719.9,203.0 L736.2,185.4 L752.2,166.7 L767.9,147.0 L783.3,126.8 L798.5,106.4 L813.5,86.1 L828.2,66.3 L842.8,47.3 L857.2,29.5 L871.5,13.2 L885.6,-1.4 L899.6,-13.8 L913.6,-23.8 L927.5,-31.3 L941.9,-34.5 L956.0,-34.2 L970.0,-30.0 L970.0,-30.0 L956.0,-34.2 L941.9,-34.5 L927.5,-31.3 L912.5,-25.9 L897.1,-17.3 L881.5,-6.1 L865.7,7.4 L849.8,22.7 L833.8,39.6 L817.7,57.7 L801.5,76.7 L785.4,96.1 L769.3,115.7 L753.2,135.2 L737.3,154.2 L721.5,172.3 L705.8,189.3 L690.4,204.9 L675.2,218.7 L660.2,230.5 L645.5,240.1 L630.8,247.3 L615.9,252.0 L600.0,255.0Z" fill="url(#ribFill)" fill-opacity="0.9" stroke="#0d1b2c" stroke-width="0.8"/>
++<path d="M460.0,215.0 L484.5,208.9 L508.8,202.2 L533.0,195.3 L557.1,188.4 L581.2,181.4 L605.1,174.5 L628.9,167.7 L652.6,161.0 L676.1,154.6 L699.6,148.4 L722.9,142.6 L746.0,137.1 L769.0,132.1 L791.9,127.5 L814.6,123.4 L837.1,120.0 L859.4,117.1 L881.6,115.0 L903.6,113.5 L925.3,112.9 L946.9,113.0 L968.2,114.4 L989.2,116.7 L1010.0,120.0 L1010.0,120.0 L989.2,116.7 L968.2,114.4 L946.9,113.0 L925.3,112.0 L903.5,111.9 L881.4,112.5 L859.1,113.9 L836.6,116.0 L813.9,118.7 L790.9,122.0 L767.8,125.9 L744.6,130.4 L721.2,135.4 L697.7,140.8 L674.1,146.7 L650.4,153.1 L626.6,159.7 L602.8,166.8 L579.0,174.1 L555.1,181.7 L531.2,189.6 L507.4,197.7 L483.6,206.0 L460.0,215.0Z" fill="#2f7fd8" fill-opacity="0.55" stroke="#0d1b2c" stroke-width="0.8"/>
++<path d="M484,167 Q714,70 948,5" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M399,206 Q528,-13 856,81" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M516,241 Q751,244 869,37" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M565,194 Q843,47 996,-0" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M426,163 Q572,134 896,161" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M584,191 Q524,22 932,3" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M598,197 Q681,50 897,113" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M634,227 Q710,223 887,111" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M613,182 Q667,187 997,15" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M429,204 Q806,132 856,130" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M660,185 Q732,97 954,115" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M649,254 Q524,170 921,129" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M587,259 Q654,161 973,50" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++<path d="M387,201 Q524,190 875,15" fill="none" stroke="#0d1b2c" stroke-width="0.6" opacity="0.7"/>
++</g>
++
++      <!-- tech marks -->
++      <g fill="#0d1b2c">
++        <rect x="18" y="196" width="190" height="10"/>
++        <rect x="18" y="212" width="70" height="3"/><rect x="94" y="212" width="20" height="3"/>
++        <rect x="300" y="16" width="44" height="4"/><rect x="348" y="16" width="10" height="4"/>
++        <rect x="438" y="200" width="3" height="10"/><rect x="446" y="200" width="3" height="10"/><rect x="470" y="204" width="26" height="2"/>
++        <rect x="8" y="20" width="3" height="80"/><rect x="8" y="110" width="3" height="20"/>
++        <rect x="900" y="214" width="62" height="4"/>
++      </g>
++      <g stroke="#0d1b2c" stroke-width="1" fill="none">
++        <path d="M24 236 h300 v-14"/><path d="M880 14 h80 v40"/><path d="M420 232 h140"/>
++        <path d="M600 8 v10 M595 13 h10"/><path d="M930 236 v-10 M925 231 h10"/>
++        <rect x="216" y="222" width="8" height="8"/><rect x="230" y="222" width="8" height="8" fill="#0d1b2c"/>
++      </g>
++      <rect width="980" height="250" filter="url(#grain)"/>
++    </svg>
++
++    <div class="brand">
++      <h1>pq<span class="q">c</span>scan</h1>
++      <div class="slogan"><b>pqc</b> inventory.</div>
++      <div class="sub">finds RSA / ECC / DH in code, keys and TLS servers. plans the move to ML-KEM and ML-DSA.</div>
++    </div>
++    <div class="lyric" aria-hidden="true">
++      harvest now, decrypt later<br>
++      tell me where the keys are<br>
++      before the qubits find them<br>
++      2030 deprecated / 2035 gone
++    </div>
++  </header>
++
++  <div class="tabs" role="tablist" aria-label="Sections">
++    <button role="tab" data-tab="scan" aria-selected="true">Scan</button>
++    <button role="tab" data-tab="tls" aria-selected="false">TLS check</button>
++    <button role="tab" data-tab="results" aria-selected="false">Results<span class="badge hidden" id="tabBadge">0</span></button>
++    <button role="tab" data-tab="plan" aria-selected="false">Migration plan</button>
++    <button role="tab" data-tab="deadlines" aria-selected="false">Deadlines</button>
++    <button role="tab" data-tab="rules" aria-selected="false">Rules</button>
++    <button role="tab" data-tab="about" aria-selected="false">About</button>
++  </div>
++
++  <div class="layout">
++    <aside>
++      <div class="box">
++        <h3>Scan modes</h3>
++        <ul class="menu">
++          <li><button data-go="scan" data-focus="drop">Upload a .zip</button></li>
++          <li><button data-go="scan" data-focus="pathInput">Folder on disk</button></li>
++          <li><button data-go="tls">TLS servers</button></li>
++          <li><button data-go="results">Last results</button></li>
++          <li><button data-go="plan">Migration plan</button></li>
++          <li><button data-go="rules">Detection rules</button></li>
++        </ul>
++      </div>
++
++      <div class="box">
++        <h3>Status</h3>
++        <div class="in lcd">
++          <span>High</span><span class="digits h" id="lcdHigh">000</span>
++          <span>Medium</span><span class="digits m" id="lcdMed">000</span>
++          <span>Info</span><span class="digits" id="lcdInfo">000</span>
++          <span>Files</span><span class="digits" id="lcdFiles">000</span>
++        </div>
++      </div>
++
++      <div class="box">
++        <h3>Spotlight</h3>
++        <div class="in countdown" id="countdown"></div>
++      </div>
++
++      <div class="buttons88" aria-hidden="true">
++        <div class="b88 b1"><span class="x">LOCAL</span>only</div>
++        <div class="b88 b2"><span class="x">CBOM</span>cyclonedx 1.6</div>
++        <div class="b88 b3"><span class="x">ML-KEM</span>ready?</div>
++        <div class="b88 b4"><span class="x">NO</span>upload</div>
++      </div>
++    </aside>
++
++    <main>
++      <!-- SCAN -->
++      <section data-view="scan">
++        <div class="win">
++          <div class="title"><span class="ic"></span>Welcome to pqcscan<span class="ctl"><span>_</span><span>□</span><span class="x">x</span></span></div>
++          <div class="body">
++            <h2>Find the crypto a quantum computer will break.</h2>
++            <p>Drop a project as a .zip, or type the path to a folder on this computer. The scan runs right here and the files never leave your machine.</p>
++            <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a zip file">
++              <strong>Drop a .zip here</strong>
++              <small>or click to choose one. Up to 64 MB.</small>
++              <input type="file" id="zipInput" accept=".zip,application/zip" hidden>
++            </div>
++            <div class="row">
++              <input type="text" id="pathInput" placeholder="/Users/you/projects/my-app" aria-label="Folder path">
++              <button class="btn" id="scanPathBtn">Scan folder</button>
++            </div>
++            <div class="row">
++              <label class="chk"><input type="checkbox" id="noTests"> skip test files</label>
++              <button class="btn grey" id="demoBtn" title="Scans the examples/vulnerable-app folder if you run from the repo">Try the demo project</button>
++            </div>
++            <div class="busy" id="busy"><div class="stripes"></div><p>Scanning&hellip;</p></div>
++            <div class="err" id="err" role="alert"></div>
++          </div>
++        </div>
++
++        <div class="sect"><span>Scan log</span></div>
++        <table class="news" id="news"><tr><td>--.--.----</td><td class="empty">Nothing scanned yet this session.</td></tr></table>
++      </section>
++
++      <!-- TLS -->
++      <section data-view="tls" class="hidden">
++        <div class="win">
++          <div class="title"><span class="ic"></span>TLS check<span class="ctl"><span>_</span><span>□</span><span class="x">x</span></span></div>
++          <div class="body">
++            <h2>Does the server already do post-quantum key exchange?</h2>
++            <p>One host per line: <code>example.com</code>, <code>api.example.com:8443</code> or a full https URL. You get the TLS version, the certificate key and expiry, whether TLS 1.0/1.1 still work, and whether the server picks <code>X25519MLKEM768</code>.</p>
++            <textarea id="tlsInput" aria-label="Hosts" placeholder="cloudflare.com&#10;google.com&#10;your-site.com"></textarea>
++            <div class="row"><button class="btn" id="tlsBtn">Check servers</button><small>Only check servers you own or are allowed to test.</small></div>
++            <div class="busy" id="busyTls"><div class="stripes"></div><p>Connecting&hellip;</p></div>
++            <div class="err" id="errTls" role="alert"></div>
++          </div>
++        </div>
++      </section>
++
++      <!-- RESULTS -->
++      <section data-view="results" class="hidden">
++        <div class="win">
++          <div class="title"><span class="ic"></span><span id="resTitle">Results</span><span class="ctl"><span>_</span><span>□</span><span class="x">x</span></span></div>
++          <div class="body" id="resBody">
++            <p class="meta">No results yet. Run a scan first.</p>
++          </div>
++        </div>
++      </section>
++
++      <!-- PLAN -->
++      <section data-view="plan" class="hidden">
++        <div class="win">
++          <div class="title"><span class="ic"></span>Migration plan<span class="ctl"><span>_</span><span>□</span><span class="x">x</span></span></div>
++          <div class="body" id="planBody"><p class="meta">The plan shows up here after a scan.</p></div>
++        </div>
++      </section>
++
++      <!-- DEADLINES -->
++      <section data-view="deadlines" class="hidden">
++        <div class="win">
++          <div class="title"><span class="ic"></span>Deadlines<span class="ctl"><span>_</span><span>□</span><span class="x">x</span></span></div>
++          <div class="body">
++            <h2>What regulators expect, and when</h2>
++            <div class="tl" id="timeline"></div>
++            <table class="plain" id="deadlineTable"></table>
++            <p class="meta">NIST IR 8547 final (Oct 2026), UK NCSC timelines, EU coordinated roadmap. Sources are in the README.</p>
++          </div>
++        </div>
++      </section>
++
++      <!-- RULES -->
++      <section data-view="rules" class="hidden">
++        <div class="win">
++          <div class="title"><span class="ic"></span>Detection rules<span class="ctl"><span>_</span><span>□</span><span class="x">x</span></span></div>
++          <div class="body">
++            <div class="filters"><input type="text" id="ruleFilter" placeholder="filter: rsa, go, jwt..." aria-label="Filter rules"><span class="meta" id="ruleCount"></span></div>
++            <table class="f" id="rulesTable"><thead><tr><th style="width:150px">id</th><th style="width:70px">severity</th><th>what it finds</th><th style="width:120px">languages</th></tr></thead><tbody></tbody></table>
++          </div>
++        </div>
++      </section>
++
++      <!-- ABOUT -->
++      <section data-view="about" class="hidden">
++        <div class="win">
++          <div class="title"><span class="ic"></span>About<span class="ctl"><span>_</span><span>□</span><span class="x">x</span></span></div>
++          <div class="body">
++            <h2>Why bother now?</h2>
++            <p>A big enough quantum computer breaks RSA and elliptic-curve crypto. Nobody has one yet, but encrypted traffic recorded today can be decrypted the day someone does. That is why key exchange comes first in the plan and signatures second.</p>
++            <p>NIST finished the replacements in 2024: ML-KEM (FIPS 203) for key exchange, ML-DSA (FIPS 204) and SLH-DSA (FIPS 205) for signatures. Every migration roadmap starts the same way: find out where the old crypto is. That is the job of this tool.</p>
++            <h2>What the scan can't see</h2>
++            <p>Rules match library calls, not data flow, so each finding needs a person to look at it. Compiled binaries, containers, HSMs, cloud KMS settings and third-party services are out of reach. An empty report does not mean the system is quantum-safe.</p>
++            <p class="meta">Same engine as the command line: <code>pqcscan scan</code>, <code>pqcscan tls</code>, <code>pqcscan ui</code>.</p>
++          </div>
++        </div>
++      </section>
++    </main>
++  </div>
++
++  <footer>
++    <span>&copy; 2026 pqcscan &middot; running on 127.0.0.1 &middot; nothing leaves this machine</span>
++    <span>best viewed at 1024&times;768 &middot; <span class="pw">powered by python</span></span>
++  </footer>
++</div>
++
++<script>
++"use strict";
++const TOKEN = "{{TOKEN}}";
++const SEVS = ["high", "medium", "low", "info"];
++const DEADLINES = [
++  {y: 2026.99, who: "EU", what: "National roadmaps and first steps (inventory)"},
++  {y: 2028, who: "NCSC", what: "Discovery and inventory finished, plan in place"},
++  {y: 2030.99, who: "EU", what: "High-risk systems migrated"},
++  {y: 2031, who: "NIST", what: "RSA, ECDSA, EdDSA, (EC)DH deprecated after 2030"},
++  {y: 2031.3, who: "NCSC", what: "High-priority migration done"},
++  {y: 2035.99, who: "EU / NCSC", what: "Full transition"},
++  {y: 2036, who: "NIST", what: "Quantum-vulnerable algorithms disallowed after 2035"},
++];
++const state = {bundle: null, sev: new Set(["high", "medium", "low"]), q: "", hideTests: false, history: []};
++
++const $ = (s, el = document) => el.querySelector(s);
++const $$ = (s, el = document) => [...el.querySelectorAll(s)];
++const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
++const pad = (n, w = 3) => String(Math.min(n, 999)).padStart(w, "0");
++
++/* tabs */
++function go(name, focusId) {
++  $$(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
++  $$("[data-view]").forEach(s => s.classList.toggle("hidden", s.dataset.view !== name));
++  $$(".menu button").forEach(b => b.classList.toggle("on", b.dataset.go === name));
++  if (focusId) setTimeout(() => document.getElementById(focusId)?.focus(), 0);
++  if (name === "rules") loadRules();
++}
++$$(".tabs button").forEach(b => b.addEventListener("click", () => go(b.dataset.tab)));
++$$("[data-go]").forEach(b => b.addEventListener("click", e => { e.preventDefault(); go(b.dataset.go, b.dataset.focus); }));
++
++/* clock + countdown */
++function tick() {
++  const d = new Date();
++  $("#clock").textContent = d.toTimeString().slice(0, 8);
++}
++setInterval(tick, 1000); tick();
++function countdown() {
++  const now = new Date();
++  const day = 86400000;
++  const dep = new Date("2031-01-01T00:00:00Z"), dis = new Date("2036-01-01T00:00:00Z");
++  const start = new Date("2024-08-13T00:00:00Z"); // FIPS 203/204/205 published
++  const pct = (t) => Math.max(0, Math.min(100, (now - start) / (t - start) * 100)).toFixed(1);
++  $("#countdown").innerHTML = `
++    <div class="big">${Math.max(0, Math.ceil((dep - now) / day)).toLocaleString("en")}</div>
++    days until NIST deprecates RSA &amp; ECC
++    <div class="bar" title="${pct(dep)}% of the way from the 2024 standards"><i style="width:${pct(dep)}%"></i></div>
++    <div class="big">${Math.max(0, Math.ceil((dis - now) / day)).toLocaleString("en")}</div>
++    days until they are disallowed
++    <div class="bar"><i style="width:${pct(dis)}%"></i></div>`;
++}
++countdown();
++
++/* timeline + deadline table */
++function drawTimeline() {
++  const tl = $("#timeline"), y0 = 2026, y1 = 2036.5;
++  const x = (y) => ((y - y0) / (y1 - y0) * 100).toFixed(2) + "%";
++  let h = "";
++  for (let y = 2026; y <= 2036; y += 2) h += `<span class="tick" style="left:${x(y)}"></span><span class="yr" style="left:${x(y)}">${y}</span>`;
++  const colors = {NIST: "#d6342b", NCSC: "#2f7fd8", EU: "#2e9b4f", "EU / NCSC": "#13294a"};
++  const shown = [[2026.99, "EU first steps", "EU"], [2028, "NCSC inventory", "NCSC"], [2031, "NIST deprecates", "NIST"], [2036, "NIST disallows", "NIST"]];
++  shown.forEach(([y, t, w], i) => {
++    h += `<div class="ev" style="left:${x(y)};bottom:${10 + (i % 2) * 34}px">${esc(t)}<i style="background:${colors[w]}"></i></div>`;
++  });
++  const now = new Date(), yn = now.getFullYear() + now.getMonth() / 12;
++  h += `<div class="now" style="left:${x(yn)}"><span>you are here</span></div>`;
++  tl.innerHTML = h;
++  $("#deadlineTable").innerHTML = "<tr><th>When</th><th>Who</th><th>What</th></tr>" + DEADLINES.map(d =>
++    `<tr><td>${d.y % 1 > 0.9 ? "end of " + Math.floor(d.y) : d.y === 2031 ? "after 2030" : d.y === 2036 ? "after 2035" : Math.floor(d.y)}</td><td>${esc(d.who)}</td><td>${esc(d.what)}</td></tr>`).join("");
++}
++drawTimeline();
++
++/* api */
++async function call(url, opts = {}) {
++  const r = await fetch(url, {...opts, headers: {"X-Pqcscan-Token": TOKEN, ...(opts.headers || {})}});
++  let data;
++  try { data = await r.json(); } catch { data = {error: `HTTP ${r.status}`}; }
++  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
++  return data;
++}
++function busy(on, which = "") {
++  $("#busy" + which).classList.toggle("on", on);
++  $$("button.btn").forEach(b => b.disabled = on);
++}
++function fail(msg, which = "") {
++  const e = $("#err" + which);
++  e.textContent = msg; e.classList.toggle("on", !!msg);
++}
++async function run(which, fn) {
++  fail("", which); busy(true, which);
++  try { show(await fn()); } catch (e) { fail(e.message, which); } finally { busy(false, which); }
++}
++
++/* inputs */
++const drop = $("#drop"), zipInput = $("#zipInput");
++drop.addEventListener("click", () => zipInput.click());
++drop.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); zipInput.click(); } });
++["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
++["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
++drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) scanZip(f); });
++zipInput.addEventListener("change", () => { if (zipInput.files[0]) scanZip(zipInput.files[0]); zipInput.value = ""; });
++
++function scanZip(file) {
++  if (!/\.zip$/i.test(file.name)) return fail("That isn't a .zip file.");
++  run("", () => call("/api/scan/zip" + ($("#noTests").checked ? "?no_tests=1" : ""), {
++    method: "POST", body: file, headers: {"Content-Type": "application/zip", "X-Pqcscan-Filename": encodeURIComponent(file.name)}}));
++}
++function scanPath(p) {
++  if (!p.trim()) return fail("Type a folder path first.");
++  run("", () => call("/api/scan/path", {method: "POST", headers: {"Content-Type": "application/json"},
++    body: JSON.stringify({path: p.trim(), no_tests: $("#noTests").checked})}));
++}
++$("#scanPathBtn").addEventListener("click", () => scanPath($("#pathInput").value));
++$("#pathInput").addEventListener("keydown", e => { if (e.key === "Enter") scanPath(e.target.value); });
++$("#demoBtn").addEventListener("click", () => scanPath("examples/vulnerable-app"));
++$("#tlsBtn").addEventListener("click", () => {
++  const targets = $("#tlsInput").value.split(/[\s,]+/).filter(Boolean);
++  if (!targets.length) return fail("Add at least one host.", "Tls");
++  run("Tls", () => call("/api/tls", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({targets})}));
++});
++
++/* render */
++function show(bundle) {
++  state.bundle = bundle;
++  const rep = bundle.report, s = rep.stats.by_severity;
++  try { rep.target = decodeURIComponent(rep.target); } catch {}
++  $("#lcdHigh").textContent = pad(s.high || 0);
++  $("#lcdMed").textContent = pad(s.medium || 0);
++  $("#lcdInfo").textContent = pad(s.info || 0);
++  $("#lcdFiles").textContent = pad(rep.stats.files_scanned);
++  const badge = $("#tabBadge");
++  badge.textContent = s.high || 0; badge.classList.toggle("hidden", !s.high);
++  state.history.unshift({when: new Date(), target: rep.target, s});
++  renderNews(); renderResults(); renderPlan();
++  go("results");
++}
++
++function renderNews() {
++  $("#news").innerHTML = state.history.slice(0, 8).map(h => {
++    const d = h.when;
++    const date = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
++    return `<tr><td>${date}</td><td><b>${esc(h.target)}</b> scanned at ${d.toTimeString().slice(0, 5)}: ${h.s.high || 0} high, ${h.s.medium || 0} medium, ${h.s.info || 0} info</td></tr>`;
++  }).join("");
++}
++
++function renderResults() {
++  const rep = state.bundle.report, s = rep.stats.by_severity;
++  $("#resTitle").textContent = "Results: " + rep.target;
++  const errs = rep.errors.length ? `<div class="err on">${rep.errors.map(esc).join("<br>")}</div>` : "";
++  $("#resBody").innerHTML = `
++    <div class="tiles">${SEVS.map(v => `<div class="tile ${v}"><b>${s[v] || 0}</b><span>${v}</span></div>`).join("")}</div>
++    <p class="meta">${rep.stats.files_scanned} scanned &middot; ${rep.findings.length} findings &middot; ${esc(rep.generated_at)}</p>
++    ${errs}
++    <div class="filters" role="group" aria-label="Filter findings">
++      ${SEVS.map(v => `<button class="chip" data-sev="${v}" aria-pressed="${state.sev.has(v)}">${v}</button>`).join("")}
++      <button class="chip" id="testsChip" aria-pressed="${state.hideTests}">hide tests</button>
++      <input type="text" id="q" placeholder="search file, algorithm..." value="${esc(state.q)}" aria-label="Search findings">
++    </div>
++    <table class="f"><thead><tr><th style="width:70px">sev</th><th>finding</th><th style="width:38%">where</th></tr></thead><tbody id="rows"></tbody></table>
++    <p class="meta" id="shown"></p>
++    <div class="sect"><span>Download</span></div>
++    <div class="dl">${Object.keys(state.bundle.files).map(n => `<button class="btn grey" data-file="${esc(n)}">${esc(n)}</button>`).join("")}</div>`;
++  $$(".chip[data-sev]").forEach(c => c.addEventListener("click", () => {
++    const v = c.dataset.sev; state.sev.has(v) ? state.sev.delete(v) : state.sev.add(v);
++    c.setAttribute("aria-pressed", String(state.sev.has(v))); renderRows();
++  }));
++  $("#testsChip").addEventListener("click", e => { state.hideTests = !state.hideTests; e.target.setAttribute("aria-pressed", String(state.hideTests)); renderRows(); });
++  $("#q").addEventListener("input", e => { state.q = e.target.value; renderRows(); });
++  $$("[data-file]").forEach(b => b.addEventListener("click", () => download(b.dataset.file)));
++  renderRows();
++}
++
++function renderRows() {
++  const q = state.q.toLowerCase();
++  const list = state.bundle.report.findings.filter(f =>
++    state.sev.has(f.severity) && !(state.hideTests && f.context === "test") &&
++    (!q || [f.location, f.algorithm, f.title, f.rule_id, f.snippet].join(" ").toLowerCase().includes(q)));
++  const rows = list.slice(0, 500).map((f, i) => {
++    const where = f.line ? `${f.location}:${f.line}` : f.location;
++    const tags = (f.context !== "code" ? `<span class="tag">${esc(f.context)}</span>` : "") + (f.confidence === "low" ? `<span class="tag">comment?</span>` : "");
++    return `<tr class="r" data-i="${i}" tabindex="0"><td><span class="sev ${f.severity}">${f.severity}</span></td>
++      <td><b>${esc(f.title)}</b> <span class="meta">${esc(f.algorithm)}</span>${tags}</td><td class="loc">${esc(where)}</td></tr>
++      <tr class="d hidden"><td colspan="3">${f.snippet ? `<pre>${esc(f.snippet)}</pre>` : ""}${f.detail ? `<p><b>Details:</b> ${esc(f.detail)}</p>` : ""}<p><b>What to do:</b> ${esc(f.remediation)}</p><p class="meta">rule ${esc(f.rule_id)}</p></td></tr>`;
++  }).join("");
++  $("#rows").innerHTML = rows || `<tr><td colspan="3" class="meta">Nothing matches these filters.</td></tr>`;
++  $("#shown").textContent = `showing ${Math.min(list.length, 500)} of ${list.length}` + (list.length > 500 ? " (download the JSON for the rest)" : "");
++  $$("#rows tr.r").forEach(r => {
++    const t = () => r.nextElementSibling.classList.toggle("hidden");
++    r.addEventListener("click", t);
++    r.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); t(); } });
++  });
++}
++
++function renderPlan() {
++  const plan = state.bundle.report.plan;
++  if (!plan.length) { $("#planBody").innerHTML = `<p class="meta">Nothing to migrate was found.</p>`; return; }
++  $("#planBody").innerHTML = plan.map(w => {
++    const firstTitle = new Map();
++    w.items.forEach(i => { if (!firstTitle.has(i.remediation)) firstTitle.set(i.remediation, i.title); });
++    const advice = [...firstTitle.entries()];
++    return `<div class="wave ${esc(w.wave)}">
++      <header><b>${esc(w.title)}</b><small>${esc(w.when)}</small></header>
++      <div class="why">${esc(w.why)}</div>
++      <ul>${w.items.map(i => {
++        const locs = i.locations.slice(0, 6).map(esc).join(", ") + (i.count > 6 ? ` and ${i.count - 6} more` : "");
++        return `<li><b>${esc(i.title)}</b> (${esc(i.algorithm)}), ${i.count}&times;<div class="locs">${locs}</div></li>`;
++      }).join("")}</ul>
++      ${advice.map(([rem, title]) => `<div class="todo">${advice.length > 1 ? `<b>${esc(title)}:</b> ` : "<b>What to do:</b> "}${esc(rem)}</div>`).join("")}
++    </div>`;
++  }).join("");
++}
++
++function download(name) {
++  const text = state.bundle.files[name];
++  const type = name.endsWith(".md") ? "text/markdown" : "application/json";
++  const a = document.createElement("a");
++  a.href = URL.createObjectURL(new Blob([text], {type}));
++  a.download = name; document.body.appendChild(a); a.click();
++  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
++}
++
++/* rules */
++let rulesLoaded = false, allRules = [];
++async function loadRules() {
++  if (rulesLoaded) return;
++  rulesLoaded = true;
++  try { allRules = (await call("/api/rules")).rules; renderRules(); }
++  catch (e) { $("#ruleCount").textContent = e.message; rulesLoaded = false; }
++}
++function renderRules() {
++  const q = $("#ruleFilter").value.toLowerCase();
++  const list = allRules.filter(r => !q || [r.id, r.title, r.algorithm, r.langs.join(" ")].join(" ").toLowerCase().includes(q));
++  $("#rulesTable tbody").innerHTML = list.map(r => `<tr><td class="loc">${esc(r.id)}</td><td><span class="sev ${r.severity}">${r.severity}</span></td><td>${esc(r.title)}</td><td class="meta">${r.langs.length > 4 ? "all" : esc(r.langs.join(", "))}</td></tr>`).join("");
++  $("#ruleCount").textContent = `${list.length} of ${allRules.length} rules`;
++}
++$("#ruleFilter").addEventListener("input", renderRules);
++</script>
++</body>
++</html>
+diff --git a/tests/test_server.py b/tests/test_server.py
+new file mode 100644
+index 0000000..4d5a7ec
+--- /dev/null
++++ b/tests/test_server.py
+@@ -0,0 +1,81 @@
++"""The local web UI server: routing and the safety checks."""
++
++import io
++import json
++import threading
++import urllib.error
++import urllib.request
++import zipfile
++from pathlib import Path
++
++import pytest
++
++from pqcscan.server import make_server
++
++EXAMPLE = Path(__file__).resolve().parent.parent / "examples" / "vulnerable-app"
++
++
++@pytest.fixture(scope="module")
++def srv():
++    httpd = make_server(port=0, token="t0k3n")
++    threading.Thread(target=httpd.serve_forever, daemon=True).start()
++    yield f"http://127.0.0.1:{httpd.server_address[1]}"
++    httpd.shutdown()
++    httpd.server_close()
++
++
++def req(url, data=None, headers=None, method=None):
++    r = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
++    try:
++        with urllib.request.urlopen(r, timeout=10) as resp:
++            return resp.status, resp.read()
++    except urllib.error.HTTPError as e:
++        return e.code, e.read()
++
++
++def test_page_has_token_and_no_placeholders(srv):
++    code, body = req(srv + "/")
++    html = body.decode()
++    assert code == 200 and 'const TOKEN = "t0k3n"' in html
++    assert "{{" not in html
++
++
++def test_wrong_host_is_rejected(srv):
++    code, _ = req(srv + "/", headers={"Host": "attacker.example:80"})
++    assert code == 403
++
++
++def test_post_without_token_is_rejected(srv):
++    code, _ = req(srv + "/api/scan/path", data=b'{"path": "."}', method="POST")
++    assert code == 403
++
++
++def test_scan_path(srv):
++    code, body = req(srv + "/api/scan/path", data=json.dumps({"path": str(EXAMPLE)}).encode(),
++                     headers={"X-Pqcscan-Token": "t0k3n"}, method="POST")
++    data = json.loads(body)
++    assert code == 200
++    assert data["report"]["stats"]["by_severity"]["high"] > 0
++    assert set(data["files"]) == {"pqc-report.json", "pqc-report.sarif", "cbom.cdx.json", "pqc-report.md"}
++
++
++def test_scan_zip(srv):
++    buf = io.BytesIO()
++    with zipfile.ZipFile(buf, "w") as zf:
++        zf.writestr("app.py", "k = rsa.generate_private_key(public_exponent=65537, key_size=2048)\n")
++    code, body = req(srv + "/api/scan/zip", data=buf.getvalue(), method="POST",
++                     headers={"X-Pqcscan-Token": "t0k3n", "X-Pqcscan-Filename": "my.zip"})
++    data = json.loads(body)
++    assert code == 200 and data["report"]["target"] == "my.zip"
++    assert [f["rule_id"] for f in data["report"]["findings"]] == ["py.rsa-keygen"]
++
++
++def test_missing_path_gives_clear_error(srv):
++    code, body = req(srv + "/api/scan/path", data=b'{"path": "/no/such/dir"}', method="POST",
++                     headers={"X-Pqcscan-Token": "t0k3n"})
++    assert code == 400 and "not found" in json.loads(body)["error"]
++
++
++def test_rules_endpoint(srv):
++    code, body = req(srv + "/api/rules")
++    assert code == 200 and len(json.loads(body)["rules"]) >= 60

@@ -124,5 +124,21 @@ def list_rules():
     click.echo(f"\n{len(RULES)} source rules + key/certificate, dependency and TLS checks.")
 
 
+@main.command()
+@click.option("--port", default=8765, show_default=True, help="Port on 127.0.0.1.")
+@click.option("--no-browser", is_flag=True, help="Don't open the browser automatically.")
+def ui(port, no_browser):
+    """Open the web interface in your browser.
+
+    The server only listens on 127.0.0.1, so nothing outside this computer can
+    reach it. Stop it with Ctrl+C.
+    """
+    from .server import run
+    try:
+        run(port=port, open_browser=not no_browser)
+    except OSError as exc:
+        raise click.ClickException(f"can't listen on port {port} ({exc}); try --port 8766")
+
+
 if __name__ == "__main__":
     main()

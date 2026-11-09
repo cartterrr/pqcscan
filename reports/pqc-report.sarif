@@ -1,0 +1,1366 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pqcscan",
+          "version": "0.1.0",
+          "informationUri": "https://github.com/cartterrr/pqcscan",
+          "rules": [
+            {
+              "id": "py.rsa-keygen",
+              "name": "RsaKeyGeneration",
+              "shortDescription": {
+                "text": "RSA key generation"
+              },
+              "fullDescription": {
+                "text": "It isn't clear from this line whether the key encrypts or signs. If it encrypts or does key exchange, treat it as urgent (hybrid ML-KEM); if it signs, it can wait for ML-DSA. Also note where the key is stored and how long the data it protects needs to stay secret."
+              },
+              "help": {
+                "text": "It isn't clear from this line whether the key encrypts or signs. If it encrypts or does key exchange, treat it as urgent (hybrid ML-KEM); if it signs, it can wait for ML-DSA. Also note where the key is stored and how long the data it protects needs to stay secret."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-key"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "py.rsa-encrypt",
+              "name": "RsaEncryptionOaepPkcs1V15",
+              "shortDescription": {
+                "text": "RSA encryption (OAEP / PKCS#1 v1.5)"
+              },
+              "fullDescription": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "help": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-kex"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "py.x25519",
+              "name": "X25519X448KeyAgreement",
+              "shortDescription": {
+                "text": "X25519 / X448 key agreement"
+              },
+              "fullDescription": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "help": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-kex"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "any.private-key",
+              "name": "PrivateKeyEmbeddedInFile",
+              "shortDescription": {
+                "text": "Private key embedded in file"
+              },
+              "fullDescription": {
+                "text": "A private key is checked into the repo. Rotate it, scrub it from git history, and load keys from a secret manager or HSM from now on."
+              },
+              "help": {
+                "text": "A private key is checked into the repo. Rotate it, scrub it from git history, and load keys from a secret manager or HSM from now on."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "secret"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "key.ssh-public-key",
+              "name": "SshPublicKey",
+              "shortDescription": {
+                "text": "SSH public key"
+              },
+              "fullDescription": {
+                "text": "A quantum computer could forge these signatures, but it can't go back and break old ones, so this can usually wait until key exchange is done. The replacement is ML-DSA-65 (FIPS 204), or SLH-DSA (FIPS 205) for long-lived roots and firmware signing. Reading the algorithm from config makes the switch much easier later."
+              },
+              "help": {
+                "text": "A quantum computer could forge these signatures, but it can't go back and break old ones, so this can usually wait until key exchange is done. The replacement is ML-DSA-65 (FIPS 204), or SLH-DSA (FIPS 205) for long-lived roots and firmware signing. Reading the algorithm from config makes the switch much easier later."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-sig"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "key.certificate",
+              "name": "X509CertificateWithQuantumVulnerableKey",
+              "shortDescription": {
+                "text": "X.509 certificate with quantum-vulnerable key"
+              },
+              "fullDescription": {
+                "text": "A quantum computer could forge these signatures, but it can't go back and break old ones, so this can usually wait until key exchange is done. The replacement is ML-DSA-65 (FIPS 204), or SLH-DSA (FIPS 205) for long-lived roots and firmware signing. Reading the algorithm from config makes the switch much easier later."
+              },
+              "help": {
+                "text": "A quantum computer could forge these signatures, but it can't go back and break old ones, so this can usually wait until key exchange is done. The replacement is ML-DSA-65 (FIPS 204), or SLH-DSA (FIPS 205) for long-lived roots and firmware signing. Reading the algorithm from config makes the switch much easier later."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-sig"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "java.rsa-keygen",
+              "name": "RsaKeyGeneration",
+              "shortDescription": {
+                "text": "RSA key generation"
+              },
+              "fullDescription": {
+                "text": "It isn't clear from this line whether the key encrypts or signs. If it encrypts or does key exchange, treat it as urgent (hybrid ML-KEM); if it signs, it can wait for ML-DSA. Also note where the key is stored and how long the data it protects needs to stay secret."
+              },
+              "help": {
+                "text": "It isn't clear from this line whether the key encrypts or signs. If it encrypts or does key exchange, treat it as urgent (hybrid ML-KEM); if it signs, it can wait for ML-DSA. Also note where the key is stored and how long the data it protects needs to stay secret."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-key"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "java.rsa-cipher",
+              "name": "RsaEncryptionJavaxCryptoCipher",
+              "shortDescription": {
+                "text": "RSA encryption (javax.crypto.Cipher)"
+              },
+              "fullDescription": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "help": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-kex"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "go.tls-curves",
+              "name": "TlsConfiguredWithClassicalOnlyCurves",
+              "shortDescription": {
+                "text": "TLS configured with classical-only curves"
+              },
+              "fullDescription": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "help": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-kex"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "go.rsa-encrypt",
+              "name": "RsaEncryption",
+              "shortDescription": {
+                "text": "RSA encryption"
+              },
+              "fullDescription": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "help": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-kex"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "js.rsa-keygen",
+              "name": "RsaKeyGenerationNodeCrypto",
+              "shortDescription": {
+                "text": "RSA key generation (node:crypto)"
+              },
+              "fullDescription": {
+                "text": "It isn't clear from this line whether the key encrypts or signs. If it encrypts or does key exchange, treat it as urgent (hybrid ML-KEM); if it signs, it can wait for ML-DSA. Also note where the key is stored and how long the data it protects needs to stay secret."
+              },
+              "help": {
+                "text": "It isn't clear from this line whether the key encrypts or signs. If it encrypts or does key exchange, treat it as urgent (hybrid ML-KEM); if it signs, it can wait for ML-DSA. Also note where the key is stored and how long the data it protects needs to stay secret."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-key"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "js.rsa-encrypt",
+              "name": "RsaPublicKeyEncryption",
+              "shortDescription": {
+                "text": "RSA public-key encryption"
+              },
+              "fullDescription": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "help": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-kex"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "js.ecdh",
+              "name": "EcdhDiffieHellman",
+              "shortDescription": {
+                "text": "ECDH / Diffie-Hellman"
+              },
+              "fullDescription": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "help": {
+                "text": "Anything encrypted this way can be recorded now and decrypted later, once a quantum computer exists. Switch key exchange to a hybrid of X25519 and ML-KEM-768 (FIPS 203). In TLS that means enabling the X25519MLKEM768 group, which OpenSSL 3.5+ and Go 1.24+ support. If the app wraps data keys with RSA-OAEP or ECDH itself, use a hybrid KEM there instead."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-kex"
+                ],
+                "security-severity": "7.5",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "py.ecdsa",
+              "name": "EcdsaSignature",
+              "shortDescription": {
+                "text": "ECDSA signature"
+              },
+              "fullDescription": {
+                "text": "A quantum computer could forge these signatures, but it can't go back and break old ones, so this can usually wait until key exchange is done. The replacement is ML-DSA-65 (FIPS 204), or SLH-DSA (FIPS 205) for long-lived roots and firmware signing. Reading the algorithm from config makes the switch much easier later."
+              },
+              "help": {
+                "text": "A quantum computer could forge these signatures, but it can't go back and break old ones, so this can usually wait until key exchange is done. The replacement is ML-DSA-65 (FIPS 204), or SLH-DSA (FIPS 205) for long-lived roots and firmware signing. Reading the algorithm from config makes the switch much easier later."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-sig"
+                ],
+                "security-severity": "5.0",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "py.weak-hash",
+              "name": "Md5Sha1Hash",
+              "shortDescription": {
+                "text": "MD5 / SHA-1 hash"
+              },
+              "fullDescription": {
+                "text": "This is broken or deprecated even without a quantum computer, so fix it now: SHA-256 or better instead of MD5/SHA-1, AES-GCM or ChaCha20-Poly1305 instead of DES/3DES/RC4/ECB, and TLS 1.2 at minimum (1.3 if you can)."
+              },
+              "help": {
+                "text": "This is broken or deprecated even without a quantum computer, so fix it now: SHA-256 or better instead of MD5/SHA-1, AES-GCM or ChaCha20-Poly1305 instead of DES/3DES/RC4/ECB, and TLS 1.2 at minimum (1.3 if you can)."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "classical-weak"
+                ],
+                "security-severity": "5.0",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "py.weak-tls",
+              "name": "Tls1011Allowed",
+              "shortDescription": {
+                "text": "TLS 1.0 / 1.1 allowed"
+              },
+              "fullDescription": {
+                "text": "This is broken or deprecated even without a quantum computer, so fix it now: SHA-256 or better instead of MD5/SHA-1, AES-GCM or ChaCha20-Poly1305 instead of DES/3DES/RC4/ECB, and TLS 1.2 at minimum (1.3 if you can)."
+              },
+              "help": {
+                "text": "This is broken or deprecated even without a quantum computer, so fix it now: SHA-256 or better instead of MD5/SHA-1, AES-GCM or ChaCha20-Poly1305 instead of DES/3DES/RC4/ECB, and TLS 1.2 at minimum (1.3 if you can)."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "classical-weak"
+                ],
+                "security-severity": "5.0",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "any.jwt-asym",
+              "name": "AsymmetricJwtJoseAlgorithm",
+              "shortDescription": {
+                "text": "Asymmetric JWT / JOSE algorithm"
+              },
+              "fullDescription": {
+                "text": "The JWT is signed with RSA, ECDSA or EdDSA. Tokens are short-lived, so this is not urgent, but whatever issues them should be able to change algorithm without a redeploy. IETF is working on ML-DSA for JOSE/COSE."
+              },
+              "help": {
+                "text": "The JWT is signed with RSA, ECDSA or EdDSA. Tokens are short-lived, so this is not urgent, but whatever issues them should be able to change algorithm without a redeploy. IETF is working on ML-DSA for JOSE/COSE."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-sig"
+                ],
+                "security-severity": "5.0",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "cfg.weak-tls",
+              "name": "Tls1011SslEnabledInConfig",
+              "shortDescription": {
+                "text": "TLS 1.0 / 1.1 / SSL enabled in config"
+              },
+              "fullDescription": {
+                "text": "This is broken or deprecated even without a quantum computer, so fix it now: SHA-256 or better instead of MD5/SHA-1, AES-GCM or ChaCha20-Poly1305 instead of DES/3DES/RC4/ECB, and TLS 1.2 at minimum (1.3 if you can)."
+              },
+              "help": {
+                "text": "This is broken or deprecated even without a quantum computer, so fix it now: SHA-256 or better instead of MD5/SHA-1, AES-GCM or ChaCha20-Poly1305 instead of DES/3DES/RC4/ECB, and TLS 1.2 at minimum (1.3 if you can)."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "classical-weak"
+                ],
+                "security-severity": "5.0",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "cfg.weak-cipher",
+              "name": "WeakTlsCipherSuites",
+              "shortDescription": {
+                "text": "Weak TLS cipher suites"
+              },
+              "fullDescription": {
+                "text": "This is broken or deprecated even without a quantum computer, so fix it now: SHA-256 or better instead of MD5/SHA-1, AES-GCM or ChaCha20-Poly1305 instead of DES/3DES/RC4/ECB, and TLS 1.2 at minimum (1.3 if you can)."
+              },
+              "help": {
+                "text": "This is broken or deprecated even without a quantum computer, so fix it now: SHA-256 or better instead of MD5/SHA-1, AES-GCM or ChaCha20-Poly1305 instead of DES/3DES/RC4/ECB, and TLS 1.2 at minimum (1.3 if you can)."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "classical-weak"
+                ],
+                "security-severity": "5.0",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "java.signature",
+              "name": "RsaEcdsaEddsaDsaSignature",
+              "shortDescription": {
+                "text": "RSA / ECDSA / EdDSA / DSA signature"
+              },
+              "fullDescription": {
+                "text": "A quantum computer could forge these signatures, but it can't go back and break old ones, so this can usually wait until key exchange is done. The replacement is ML-DSA-65 (FIPS 204), or SLH-DSA (FIPS 205) for long-lived roots and firmware signing. Reading the algorithm from config makes the switch much easier later."
+              },
+              "help": {
+                "text": "A quantum computer could forge these signatures, but it can't go back and break old ones, so this can usually wait until key exchange is done. The replacement is ML-DSA-65 (FIPS 204), or SLH-DSA (FIPS 205) for long-lived roots and firmware signing. Reading the algorithm from config makes the switch much easier later."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-sig"
+                ],
+                "security-severity": "5.0",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "java.weak-hash",
+              "name": "Md5Sha1Hash",
+              "shortDescription": {
+                "text": "MD5 / SHA-1 hash"
+              },
+              "fullDescription": {
+                "text": "This is broken or deprecated even without a quantum computer, so fix it now: SHA-256 or better instead of MD5/SHA-1, AES-GCM or ChaCha20-Poly1305 instead of DES/3DES/RC4/ECB, and TLS 1.2 at minimum (1.3 if you can)."
+              },
+              "help": {
+                "text": "This is broken or deprecated even without a quantum computer, so fix it now: SHA-256 or better instead of MD5/SHA-1, AES-GCM or ChaCha20-Poly1305 instead of DES/3DES/RC4/ECB, and TLS 1.2 at minimum (1.3 if you can)."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "classical-weak"
+                ],
+                "security-severity": "5.0",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "go.ecdsa",
+              "name": "EcdsaKeySignature",
+              "shortDescription": {
+                "text": "ECDSA key / signature"
+              },
+              "fullDescription": {
+                "text": "A quantum computer could forge these signatures, but it can't go back and break old ones, so this can usually wait until key exchange is done. The replacement is ML-DSA-65 (FIPS 204), or SLH-DSA (FIPS 205) for long-lived roots and firmware signing. Reading the algorithm from config makes the switch much easier later."
+              },
+              "help": {
+                "text": "A quantum computer could forge these signatures, but it can't go back and break old ones, so this can usually wait until key exchange is done. The replacement is ML-DSA-65 (FIPS 204), or SLH-DSA (FIPS 205) for long-lived roots and firmware signing. Reading the algorithm from config makes the switch much easier later."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-sig"
+                ],
+                "security-severity": "5.0",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "js.webcrypto-sig",
+              "name": "WebcryptoRsaEcdsaEd25519Signature",
+              "shortDescription": {
+                "text": "WebCrypto RSA / ECDSA / Ed25519 signature"
+              },
+              "fullDescription": {
+                "text": "A quantum computer could forge these signatures, but it can't go back and break old ones, so this can usually wait until key exchange is done. The replacement is ML-DSA-65 (FIPS 204), or SLH-DSA (FIPS 205) for long-lived roots and firmware signing. Reading the algorithm from config makes the switch much easier later."
+              },
+              "help": {
+                "text": "A quantum computer could forge these signatures, but it can't go back and break old ones, so this can usually wait until key exchange is done. The replacement is ML-DSA-65 (FIPS 204), or SLH-DSA (FIPS 205) for long-lived roots and firmware signing. Reading the algorithm from config makes the switch much easier later."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "quantum-sig"
+                ],
+                "security-severity": "5.0",
+                "precision": "medium"
+              }
+            },
+            {
+              "id": "js.weak-hash",
+              "name": "Md5Sha1Hash",
+              "shortDescription": {
+                "text": "MD5 / SHA-1 hash"
+              },
+              "fullDescription": {
+                "text": "This is broken or deprecated even without a quantum computer, so fix it now: SHA-256 or better instead of MD5/SHA-1, AES-GCM or ChaCha20-Poly1305 instead of DES/3DES/RC4/ECB, and TLS 1.2 at minimum (1.3 if you can)."
+              },
+              "help": {
+                "text": "This is broken or deprecated even without a quantum computer, so fix it now: SHA-256 or better instead of MD5/SHA-1, AES-GCM or ChaCha20-Poly1305 instead of DES/3DES/RC4/ECB, and TLS 1.2 at minimum (1.3 if you can)."
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "security",
+                  "cryptography",
+                  "post-quantum",
+                  "classical-weak"
+                ],
+                "security-severity": "5.0",
+                "precision": "medium"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "py.rsa-keygen",
+          "level": "error",
+          "message": {
+            "text": "RSA key generation (RSA)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/crypto_utils.py"
+                },
+                "region": {
+                  "startLine": 11,
+                  "snippet": {
+                    "text": "return rsa.generate_private_key(public_exponent=65537, key_size=2048)"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-key",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "py.rsa-encrypt",
+          "level": "error",
+          "message": {
+            "text": "RSA encryption (OAEP / PKCS#1 v1.5) (RSA-OAEP)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/crypto_utils.py"
+                },
+                "region": {
+                  "startLine": 17,
+                  "snippet": {
+                    "text": "padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None),"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-kex",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "py.x25519",
+          "level": "error",
+          "message": {
+            "text": "X25519 / X448 key agreement (X25519)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/crypto_utils.py"
+                },
+                "region": {
+                  "startLine": 26,
+                  "snippet": {
+                    "text": "me = X25519PrivateKey.generate()"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-kex",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "any.private-key",
+          "level": "error",
+          "message": {
+            "text": "Private key embedded in file (private key)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/legacy_config.py"
+                },
+                "region": {
+                  "startLine": 2,
+                  "snippet": {
+                    "text": "SERVICE_KEY = \"\"\"-----BEGIN RSA PRIVATE KEY-----"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "secret",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "key.ssh-public-key",
+          "level": "error",
+          "message": {
+            "text": "SSH public key (ssh-rsa). ssh-rsa, 1024 bits; classically weak (DSA or RSA < 2048)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "deploy/authorized_keys"
+                },
+                "region": {
+                  "startLine": 1,
+                  "snippet": {
+                    "text": "ssh-rsa AAAAB3NzaC1yc2EA..."
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-sig",
+            "confidence": "high",
+            "context": "key-file"
+          }
+        },
+        {
+          "ruleId": "key.certificate",
+          "level": "error",
+          "message": {
+            "text": "X.509 certificate with quantum-vulnerable key (RSA-2048). subject CN=api.example.com; signature=sha256WithRSAEncryption; expires 2037-12-29; still valid after 2035, when NIST disallows these algorithms."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "deploy/certs/api.crt"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-sig",
+            "confidence": "high",
+            "context": "key-file"
+          }
+        },
+        {
+          "ruleId": "java.rsa-keygen",
+          "level": "error",
+          "message": {
+            "text": "RSA key generation (RSA)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "services/billing/src/main/java/Billing.java"
+                },
+                "region": {
+                  "startLine": 6,
+                  "snippet": {
+                    "text": "KeyPairGenerator kpg = KeyPairGenerator.getInstance(\"RSA\");"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-key",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "java.rsa-cipher",
+          "level": "error",
+          "message": {
+            "text": "RSA encryption (javax.crypto.Cipher) (RSA)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "services/billing/src/main/java/Billing.java"
+                },
+                "region": {
+                  "startLine": 12,
+                  "snippet": {
+                    "text": "Cipher c = Cipher.getInstance(\"RSA/ECB/OAEPWithSHA-256AndMGF1Padding\");"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-kex",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "go.tls-curves",
+          "level": "error",
+          "message": {
+            "text": "TLS configured with classical-only curves (ECDHE)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "services/gateway/main.go"
+                },
+                "region": {
+                  "startLine": 15,
+                  "snippet": {
+                    "text": "CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256},"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-kex",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "go.rsa-encrypt",
+          "level": "error",
+          "message": {
+            "text": "RSA encryption (RSA-OAEP)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "services/gateway/main.go"
+                },
+                "region": {
+                  "startLine": 24,
+                  "snippet": {
+                    "text": "return rsa.EncryptOAEP(sha256.New(), rand.Reader, pub, msg, nil)"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-kex",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "py.rsa-keygen",
+          "level": "error",
+          "message": {
+            "text": "RSA key generation (RSA)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tests/test_crypto_utils.py"
+                },
+                "region": {
+                  "startLine": 5,
+                  "snippet": {
+                    "text": "key = rsa.generate_private_key(public_exponent=65537, key_size=2048)"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-key",
+            "confidence": "high",
+            "context": "test"
+          }
+        },
+        {
+          "ruleId": "js.rsa-keygen",
+          "level": "error",
+          "message": {
+            "text": "RSA key generation (node:crypto) (RSA)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "web/src/session.ts"
+                },
+                "region": {
+                  "startLine": 4,
+                  "snippet": {
+                    "text": "return generateKeyPairSync(\"rsa\", { modulusLength: 2048 });"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-key",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "js.rsa-encrypt",
+          "level": "error",
+          "message": {
+            "text": "RSA public-key encryption (RSA)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "web/src/session.ts"
+                },
+                "region": {
+                  "startLine": 8,
+                  "snippet": {
+                    "text": "return publicEncrypt(pubPem, secret);"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-kex",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "js.ecdh",
+          "level": "error",
+          "message": {
+            "text": "ECDH / Diffie-Hellman (ECDH/DH)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "web/src/session.ts"
+                },
+                "region": {
+                  "startLine": 12,
+                  "snippet": {
+                    "text": "const ecdh = createECDH(\"prime256v1\");"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-kex",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "py.ecdsa",
+          "level": "warning",
+          "message": {
+            "text": "ECDSA signature (ECDSA)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/crypto_utils.py"
+                },
+                "region": {
+                  "startLine": 22,
+                  "snippet": {
+                    "text": "return private_key.sign(receipt, ec.ECDSA(hashes.SHA256()))"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-sig",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "py.weak-hash",
+          "level": "warning",
+          "message": {
+            "text": "MD5 / SHA-1 hash (MD5/SHA-1)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/crypto_utils.py"
+                },
+                "region": {
+                  "startLine": 31,
+                  "snippet": {
+                    "text": "return hashlib.md5(payload).hexdigest()"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "classical-weak",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "py.weak-tls",
+          "level": "warning",
+          "message": {
+            "text": "TLS 1.0 / 1.1 allowed (TLS1.0/1.1)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/crypto_utils.py"
+                },
+                "region": {
+                  "startLine": 35,
+                  "snippet": {
+                    "text": "return ssl.SSLContext(ssl.PROTOCOL_TLSv1)"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "classical-weak",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "any.jwt-asym",
+          "level": "warning",
+          "message": {
+            "text": "Asymmetric JWT / JOSE algorithm (RS256/ES256/EdDSA)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "app/tokens.py"
+                },
+                "region": {
+                  "startLine": 5,
+                  "snippet": {
+                    "text": "return jwt.encode(claims, key, algorithm=\"RS256\")"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-sig",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "key.ssh-public-key",
+          "level": "warning",
+          "message": {
+            "text": "SSH public key (ssh-ed25519). ssh-ed25519, 256 bits."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "deploy/authorized_keys"
+                },
+                "region": {
+                  "startLine": 2,
+                  "snippet": {
+                    "text": "ssh-ed25519 AAAAC3NzaC1lZDI1..."
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-sig",
+            "confidence": "high",
+            "context": "key-file"
+          }
+        },
+        {
+          "ruleId": "cfg.weak-tls",
+          "level": "warning",
+          "message": {
+            "text": "TLS 1.0 / 1.1 / SSL enabled in config (TLS1.0/1.1)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "deploy/nginx.conf"
+                },
+                "region": {
+                  "startLine": 4,
+                  "snippet": {
+                    "text": "ssl_protocols       TLSv1 TLSv1.1 TLSv1.2;"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "classical-weak",
+            "confidence": "high",
+            "context": "config"
+          }
+        },
+        {
+          "ruleId": "cfg.weak-cipher",
+          "level": "warning",
+          "message": {
+            "text": "Weak TLS cipher suites (RC4/DES/3DES/NULL/EXPORT)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "deploy/nginx.conf"
+                },
+                "region": {
+                  "startLine": 5,
+                  "snippet": {
+                    "text": "ssl_ciphers         ECDHE-RSA-AES128-GCM-SHA256:DES-CBC3-SHA;"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "classical-weak",
+            "confidence": "high",
+            "context": "config"
+          }
+        },
+        {
+          "ruleId": "java.signature",
+          "level": "warning",
+          "message": {
+            "text": "RSA / ECDSA / EdDSA / DSA signature (RSA/ECDSA/EdDSA)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "services/billing/src/main/java/Billing.java"
+                },
+                "region": {
+                  "startLine": 18,
+                  "snippet": {
+                    "text": "Signature s = Signature.getInstance(\"SHA256withECDSA\");"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-sig",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "java.weak-hash",
+          "level": "warning",
+          "message": {
+            "text": "MD5 / SHA-1 hash (MD5/SHA-1)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "services/billing/src/main/java/Billing.java"
+                },
+                "region": {
+                  "startLine": 25,
+                  "snippet": {
+                    "text": "return MessageDigest.getInstance(\"MD5\").digest(data);"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "classical-weak",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "go.ecdsa",
+          "level": "warning",
+          "message": {
+            "text": "ECDSA key / signature (ECDSA)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "services/gateway/main.go"
+                },
+                "region": {
+                  "startLine": 20,
+                  "snippet": {
+                    "text": "return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-sig",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "js.webcrypto-sig",
+          "level": "warning",
+          "message": {
+            "text": "WebCrypto RSA / ECDSA / Ed25519 signature (RSASSA/ECDSA/Ed25519)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "web/src/session.ts"
+                },
+                "region": {
+                  "startLine": 18,
+                  "snippet": {
+                    "text": "{ name: \"ECDSA\", namedCurve: \"P-256\" }, false, [\"sign\", \"verify\"]);"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-sig",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "js.webcrypto-sig",
+          "level": "warning",
+          "message": {
+            "text": "WebCrypto RSA / ECDSA / Ed25519 signature (RSASSA/ECDSA/Ed25519)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "web/src/session.ts"
+                },
+                "region": {
+                  "startLine": 19,
+                  "snippet": {
+                    "text": "return crypto.subtle.sign({ name: \"ECDSA\", hash: \"SHA-256\" }, key.privateKey, data);"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "quantum-sig",
+            "confidence": "high",
+            "context": "code"
+          }
+        },
+        {
+          "ruleId": "js.weak-hash",
+          "level": "warning",
+          "message": {
+            "text": "MD5 / SHA-1 hash (MD5/SHA-1)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "web/src/session.ts"
+                },
+                "region": {
+                  "startLine": 22,
+                  "snippet": {
+                    "text": "export const etag = (body: string) => createHash(\"md5\").update(body).digest(\"hex\");"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "kind": "classical-weak",
+            "confidence": "high",
+            "context": "code"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -63,6 +63,22 @@ pip install -e .
 
 Python 3.10 or newer. The only dependencies are `click` and `cryptography`.
 
+## Web interface
+
+```bash
+pqcscan ui
+```
+
+This opens a page in your browser where you can drop a .zip, point it at a
+folder, check TLS servers, browse the findings and the migration plan, and
+download the reports. It's the same engine as the command line.
+
+The server listens on 127.0.0.1 only, and every scan request has to carry a
+random token that's built into the page, so other websites can't use it. The
+title font (Cinzel Decorative) comes from Google Fonts; offline, the page falls
+back to a system serif and everything else works the same. Use `--port` to pick
+another port and `--no-browser` to skip opening a tab.
+
 ## Usage
 
 ```bash
