@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pqcscan"
+version = "0.1.0"
+description = "Scan code, key files and TLS servers for crypto that quantum computers will break, and export a CBOM and a migration plan."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["click>=8.0", "cryptography>=41"]
+keywords = ["post-quantum", "pqc", "cryptography", "cbom", "cyclonedx", "ml-kem", "security"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: Security :: Cryptography",
+  "License :: OSI Approved :: MIT License",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+pqcscan = "pqcscan.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

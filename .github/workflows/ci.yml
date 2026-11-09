@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write   # upload SARIF to GitHub code scanning
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  validate-outputs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e . "cyclonedx-python-lib[json-validation]"
+      - name: Scan the demo project
+        run: pqcscan scan examples/vulnerable-app --out-dir pqc-reports
+      - name: Validate CBOM against the CycloneDX 1.6 schema
+        run: |
+          python - <<'PY'
+          from cyclonedx.schema import SchemaVersion
+          from cyclonedx.validation.json import JsonStrictValidator
+          err = JsonStrictValidator(SchemaVersion.V1_6).validate_str(open("pqc-reports/cbom.cdx.json").read())
+          assert err is None, err
+          print("CBOM is valid CycloneDX 1.6")
+          PY
+      - name: Upload SARIF (demo findings show up under Security > Code scanning)
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: pqc-reports/pqc-report.sarif
+          category: pqcscan-demo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pqc-reports
+          path: pqc-reports/

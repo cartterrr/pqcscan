@@ -1,0 +1,753 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:d826ea6a-af31-4f0d-a6a2-60311cec5915",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-11-09T05:00:19Z",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "pqcscan",
+          "version": "0.1.0"
+        }
+      ]
+    },
+    "component": {
+      "type": "application",
+      "name": "examples/vulnerable-app",
+      "bom-ref": "target"
+    }
+  },
+  "components": [
+    {
+      "type": "cryptographic-asset",
+      "name": "RSA",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "pke",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "keygen",
+            "encrypt",
+            "decrypt"
+          ],
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "quantum-key"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/rsa/pke",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "app/crypto_utils.py",
+            "line": 11,
+            "additionalContext": "return rsa.generate_private_key(public_exponent=65537, key_size=2048)"
+          },
+          {
+            "location": "services/billing/src/main/java/Billing.java",
+            "line": 6,
+            "additionalContext": "KeyPairGenerator kpg = KeyPairGenerator.getInstance(\"RSA\");"
+          },
+          {
+            "location": "services/billing/src/main/java/Billing.java",
+            "line": 12,
+            "additionalContext": "Cipher c = Cipher.getInstance(\"RSA/ECB/OAEPWithSHA-256AndMGF1Padding\");"
+          },
+          {
+            "location": "tests/test_crypto_utils.py",
+            "line": 5,
+            "additionalContext": "key = rsa.generate_private_key(public_exponent=65537, key_size=2048)"
+          },
+          {
+            "location": "web/src/session.ts",
+            "line": 4,
+            "additionalContext": "return generateKeyPairSync(\"rsa\", { modulusLength: 2048 });"
+          },
+          {
+            "location": "web/src/session.ts",
+            "line": 8,
+            "additionalContext": "return publicEncrypt(pubPem, secret);"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "RSA-OAEP",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "pke",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "keygen",
+            "encrypt",
+            "decrypt"
+          ],
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "quantum-kex"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/rsa-oaep/pke",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "app/crypto_utils.py",
+            "line": 17,
+            "additionalContext": "padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None),"
+          },
+          {
+            "location": "services/gateway/main.go",
+            "line": 24,
+            "additionalContext": "return rsa.EncryptOAEP(sha256.New(), rand.Reader, pub, msg, nil)"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "X25519",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "key-agree",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "keygen",
+            "keyderive"
+          ],
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "quantum-kex"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/x25519/key-agree",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "app/crypto_utils.py",
+            "line": 26,
+            "additionalContext": "me = X25519PrivateKey.generate()"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "private key private-key",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "private-key"
+        }
+      },
+      "bom-ref": "crypto/related-crypto-material/private-key/app-legacy-config-py-2",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "app/legacy_config.py",
+            "line": 2,
+            "additionalContext": "SERVICE_KEY = \"\"\"-----BEGIN RSA PRIVATE KEY-----"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "ssh-rsa public-key",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "public-key",
+          "size": 1024
+        }
+      },
+      "bom-ref": "crypto/related-crypto-material/public-key/deploy-authorized-keys-1",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "deploy/authorized_keys",
+            "line": 1,
+            "additionalContext": "ssh-rsa AAAAB3NzaC1yc2EA..."
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "api.example.com",
+      "cryptoProperties": {
+        "assetType": "certificate",
+        "certificateProperties": {
+          "subjectName": "api.example.com",
+          "notValidAfter": "2037-12-29T00:00:00Z",
+          "certificateFormat": "X.509"
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:publicKeyAlgorithm",
+          "value": "RSA-2048"
+        },
+        {
+          "name": "pqcscan:signatureAlgorithm",
+          "value": "sha256WithRSAEncryption"
+        }
+      ],
+      "bom-ref": "crypto/certificate/api-example-com@2037-12-29",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "deploy/certs/api.crt",
+            "additionalContext": "certificate #1: api.example.com"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "ECDHE",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "key-agree",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "keygen",
+            "keyderive"
+          ],
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "quantum-kex"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/ecdhe/key-agree",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "services/gateway/main.go",
+            "line": 15,
+            "additionalContext": "CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256},"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "ECDH/DH",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "key-agree",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "keygen",
+            "keyderive"
+          ],
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "quantum-kex"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/ecdh-dh/key-agree",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "web/src/session.ts",
+            "line": 12,
+            "additionalContext": "const ecdh = createECDH(\"prime256v1\");"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "ECDSA",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "sign",
+            "verify"
+          ],
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "quantum-sig"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/ecdsa/signature",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "app/crypto_utils.py",
+            "line": 22,
+            "additionalContext": "return private_key.sign(receipt, ec.ECDSA(hashes.SHA256()))"
+          },
+          {
+            "location": "services/gateway/main.go",
+            "line": 20,
+            "additionalContext": "return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "MD5/SHA-1",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "digest"
+          ],
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "classical-weak"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/md5-sha-1/hash",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "app/crypto_utils.py",
+            "line": 31,
+            "additionalContext": "return hashlib.md5(payload).hexdigest()"
+          },
+          {
+            "location": "services/billing/src/main/java/Billing.java",
+            "line": 25,
+            "additionalContext": "return MessageDigest.getInstance(\"MD5\").digest(data);"
+          },
+          {
+            "location": "web/src/session.ts",
+            "line": 22,
+            "additionalContext": "export const etag = (body: string) => createHash(\"md5\").update(body).digest(\"hex\");"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "TLS1.0/1.1",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "other",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "other"
+          ],
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "classical-weak"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/tls1-0-1-1/other",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "app/crypto_utils.py",
+            "line": 35,
+            "additionalContext": "return ssl.SSLContext(ssl.PROTOCOL_TLSv1)"
+          },
+          {
+            "location": "deploy/nginx.conf",
+            "line": 4,
+            "additionalContext": "ssl_protocols       TLSv1 TLSv1.1 TLSv1.2;"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "RS256/ES256/EdDSA",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "sign",
+            "verify"
+          ],
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "quantum-sig"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/rs256-es256-eddsa/signature",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "app/tokens.py",
+            "line": 5,
+            "additionalContext": "return jwt.encode(claims, key, algorithm=\"RS256\")"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "ssh-ed25519 public-key",
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "public-key",
+          "size": 256
+        }
+      },
+      "bom-ref": "crypto/related-crypto-material/public-key/deploy-authorized-keys-2",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "deploy/authorized_keys",
+            "line": 2,
+            "additionalContext": "ssh-ed25519 AAAAC3NzaC1lZDI1..."
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "RC4/DES/3DES/NULL/EXPORT",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "other",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "other"
+          ],
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "classical-weak"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/rc4-des-3des-null-export/other",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "deploy/nginx.conf",
+            "line": 5,
+            "additionalContext": "ssl_ciphers         ECDHE-RSA-AES128-GCM-SHA256:DES-CBC3-SHA;"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "RSA/ECDSA/EdDSA",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "sign",
+            "verify"
+          ],
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "quantum-sig"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/rsa-ecdsa-eddsa/signature",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "services/billing/src/main/java/Billing.java",
+            "line": 18,
+            "additionalContext": "Signature s = Signature.getInstance(\"SHA256withECDSA\");"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "RSASSA/ECDSA/Ed25519",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "sign",
+            "verify"
+          ],
+          "nistQuantumSecurityLevel": 0
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "quantum-sig"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/rsassa-ecdsa-ed25519/signature",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "web/src/session.ts",
+            "line": 18,
+            "additionalContext": "{ name: \"ECDSA\", namedCurve: \"P-256\" }, false, [\"sign\", \"verify\"]);"
+          },
+          {
+            "location": "web/src/session.ts",
+            "line": 19,
+            "additionalContext": "return crypto.subtle.sign({ name: \"ECDSA\", hash: \"SHA-256\" }, key.privateKey, data);"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "ML-KEM/ML-DSA/SLH-DSA",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "kem",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "keygen",
+            "encapsulate",
+            "decapsulate"
+          ]
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "pqc"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/ml-kem-ml-dsa-slh-dsa/kem",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "app/pq_kem.py",
+            "line": 1,
+            "additionalContext": "\"\"\"Experimental post-quantum key encapsulation (liboqs-python).\"\"\""
+          },
+          {
+            "location": "app/pq_kem.py",
+            "line": 6,
+            "additionalContext": "with oqs.KeyEncapsulation(\"ML-KEM-768\") as kem:"
+          }
+        ]
+      }
+    },
+    {
+      "type": "library",
+      "name": "cryptography",
+      "description": "Cryptographic library: pyca/cryptography (RSA, ECC, X25519, ...)",
+      "purl": "pkg:pypi/cryptography",
+      "bom-ref": "pkg:pypi/cryptography",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "requirements.txt",
+            "line": 1,
+            "additionalContext": "cryptography>=42"
+          }
+        ]
+      }
+    },
+    {
+      "type": "library",
+      "name": "pyjwt",
+      "description": "Cryptographic library: PyJWT",
+      "purl": "pkg:pypi/pyjwt",
+      "bom-ref": "pkg:pypi/pyjwt",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "requirements.txt",
+            "line": 2,
+            "additionalContext": "pyjwt[crypto]==2.9.0"
+          }
+        ]
+      }
+    },
+    {
+      "type": "library",
+      "name": "liboqs-python",
+      "description": "Post-quantum library: liboqs-python (Open Quantum Safe)",
+      "purl": "pkg:pypi/liboqs-python",
+      "bom-ref": "pkg:pypi/liboqs-python",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "requirements.txt",
+            "line": 3,
+            "additionalContext": "liboqs-python==0.12.0"
+          }
+        ]
+      }
+    },
+    {
+      "type": "library",
+      "name": "golang.org/x/crypto",
+      "description": "Cryptographic library: golang.org/x/crypto",
+      "purl": "pkg:golang/golang.org/x/crypto",
+      "bom-ref": "pkg:golang/golang.org/x/crypto",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "services/gateway/go.mod",
+            "line": 5,
+            "additionalContext": "require golang.org/x/crypto v0.31.0"
+          }
+        ]
+      }
+    },
+    {
+      "type": "cryptographic-asset",
+      "name": "X25519MLKEM768",
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "kem",
+          "executionEnvironment": "software-plain-ram",
+          "cryptoFunctions": [
+            "keygen",
+            "encapsulate",
+            "decapsulate"
+          ],
+          "nistQuantumSecurityLevel": 3
+        }
+      },
+      "properties": [
+        {
+          "name": "pqcscan:kind",
+          "value": "pqc"
+        }
+      ],
+      "bom-ref": "crypto/algorithm/x25519mlkem768/kem",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "services/gateway/pq_ready.go",
+            "line": 9,
+            "additionalContext": "CurvePreferences: []tls.CurveID{tls.X25519MLKEM768, tls.X25519},"
+          }
+        ]
+      }
+    },
+    {
+      "type": "library",
+      "name": "jsonwebtoken",
+      "description": "Cryptographic library: jsonwebtoken",
+      "purl": "pkg:npm/jsonwebtoken",
+      "bom-ref": "pkg:npm/jsonwebtoken",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "web/package.json",
+            "line": 4,
+            "additionalContext": "\"jsonwebtoken\": \"^9.0.2\","
+          }
+        ]
+      }
+    },
+    {
+      "type": "library",
+      "name": "node-forge",
+      "description": "Cryptographic library: node-forge",
+      "purl": "pkg:npm/node-forge",
+      "bom-ref": "pkg:npm/node-forge",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "web/package.json",
+            "line": 5,
+            "additionalContext": "\"node-forge\": \"^1.3.1\""
+          }
+        ]
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "target",
+      "dependsOn": [
+        "crypto/algorithm/rsa/pke",
+        "crypto/algorithm/rsa-oaep/pke",
+        "crypto/algorithm/x25519/key-agree",
+        "crypto/related-crypto-material/private-key/app-legacy-config-py-2",
+        "crypto/related-crypto-material/public-key/deploy-authorized-keys-1",
+        "crypto/certificate/api-example-com@2037-12-29",
+        "crypto/algorithm/ecdhe/key-agree",
+        "crypto/algorithm/ecdh-dh/key-agree",
+        "crypto/algorithm/ecdsa/signature",
+        "crypto/algorithm/md5-sha-1/hash",
+        "crypto/algorithm/tls1-0-1-1/other",
+        "crypto/algorithm/rs256-es256-eddsa/signature",
+        "crypto/related-crypto-material/public-key/deploy-authorized-keys-2",
+        "crypto/algorithm/rc4-des-3des-null-export/other",
+        "crypto/algorithm/rsa-ecdsa-eddsa/signature",
+        "crypto/algorithm/rsassa-ecdsa-ed25519/signature",
+        "crypto/algorithm/ml-kem-ml-dsa-slh-dsa/kem",
+        "pkg:pypi/cryptography",
+        "pkg:pypi/pyjwt",
+        "pkg:pypi/liboqs-python",
+        "pkg:golang/golang.org/x/crypto",
+        "crypto/algorithm/x25519mlkem768/kem",
+        "pkg:npm/jsonwebtoken",
+        "pkg:npm/node-forge"
+      ]
+    }
+  ]
+}
