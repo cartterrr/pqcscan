@@ -56,7 +56,7 @@ All of these plans start with an inventory, which is the part this tool helps wi
 ## Install
 
 ```bash
-git clone https://github.com/your-name/pqcscan
+git clone https://github.com/cartterrr/pqcscan
 cd pqcscan
 pip install -e .
 ```
@@ -155,7 +155,7 @@ is in [src/pqcscan/tls.py](src/pqcscan/tls.py).
 ## GitHub Actions
 
 ```yaml
-- run: pip install git+https://github.com/your-name/pqcscan
+- run: pip install git+https://github.com/cartterrr/pqcscan
 - run: pqcscan scan . --out-dir pqc-reports --fail-on high
 - uses: github/codeql-action/upload-sarif@v3
   if: always()

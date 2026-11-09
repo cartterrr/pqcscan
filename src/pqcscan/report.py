@@ -13,7 +13,7 @@ from .plan import DEADLINES, build_plan
 from .rules import rule_by_id
 
 TOOL = "pqcscan"
-REPO_URL = "https://github.com/your-name/pqcscan"
+REPO_URL = "https://github.com/cartterrr/pqcscan"
 SEV_ORDER = [Severity.HIGH, Severity.MEDIUM, Severity.LOW, Severity.INFO]
 
 

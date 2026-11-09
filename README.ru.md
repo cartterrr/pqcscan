@@ -35,7 +35,7 @@ English: [README.md](README.md).
 ## Установка и запуск
 
 ```bash
-git clone https://github.com/your-name/pqcscan
+git clone https://github.com/cartterrr/pqcscan
 cd pqcscan
 pip install -e .
 
