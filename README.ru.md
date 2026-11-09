@@ -48,6 +48,12 @@ pqcscan rules                                   # список правил
 
 Нужен Python 3.10+. Зависимости: `click` и `cryptography`.
 
+Готовый релиз можно поставить без клонирования:
+
+```bash
+pip install https://github.com/cartterrr/pqcscan/releases/download/v0.1.0/pqcscan-0.1.0-py3-none-any.whl
+```
+
 `--fail-on` не учитывает тесты и совпадения в комментариях, чтобы CI не падал
 из-за теста, который генерирует RSA-ключ. Строку, которую уже проверили,
 можно скрыть комментарием `pqcscan:ignore`.

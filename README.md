@@ -63,6 +63,14 @@ pip install -e .
 
 Python 3.10 or newer. The only dependencies are `click` and `cryptography`.
 
+Or install a release without cloning:
+
+```bash
+pip install https://github.com/cartterrr/pqcscan/releases/download/v0.1.0/pqcscan-0.1.0-py3-none-any.whl
+```
+
+Release notes are in [CHANGELOG.md](CHANGELOG.md).
+
 ## Web interface
 
 ```bash
